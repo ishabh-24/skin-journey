@@ -13,3 +13,7 @@ build
 __pycache__/
 *.pyc
 
+# CVAT (local labeling)
+cvat/
+ml/data/cvat*/
+

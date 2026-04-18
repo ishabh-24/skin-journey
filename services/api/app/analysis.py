@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image, ImageFilter
 
 from .ml_model import ModelUnavailable, predict_prob_mask
+from .severity_head import SeverityHeadUnavailable, predict_severity
 
 
 @dataclass(frozen=True)
@@ -195,6 +196,43 @@ def analyze_image_bytes(image_bytes: bytes) -> dict:
     else:
         bucket = "severe"
 
+    severity_probs: dict[str, float] | None = None
+    try:
+        # Feature vector aligned with ml/severity_features.py
+        rgb01 = _to_rgb_array(img, max_side=512)
+        red = _redness_map(rgb01)
+        # bring prob/inflammation to same shape as rgb01
+        ih, iw, _ = rgb01.shape
+        infl_img = Image.fromarray((np.clip(inflammation, 0, 1) * 255).astype(np.uint8), mode="L").resize(
+            (iw, ih), resample=Image.BILINEAR
+        )
+        infl = np.asarray(infl_img).astype(np.float32) / 255.0
+
+        face = _simple_face_regions(rgb01)["full_face"]
+        red_face = red[face[0], face[1]]
+        infl_face = infl[face[0], face[1]]
+
+        p = infl_face.reshape(-1)
+        k = max(1, int(0.02 * p.size))
+        topk = float(np.mean(np.partition(p, -k)[-k:]))
+        mass = float(np.mean(infl_face))
+        area_t20 = float(np.mean(infl_face > 0.20))
+        area_t35 = float(np.mean(infl_face > 0.35))
+
+        r = red_face.reshape(-1)
+        red_mean = float(np.mean(red_face))
+        red_top = float(np.mean(np.partition(r, -k)[-k:]))
+
+        feats = np.asarray(
+            [mass, topk, area_t20, area_t35, red_mean, red_top, red_mean * mass, red_top * topk],
+            dtype=np.float32,
+        )
+
+        sp = predict_severity(feats)
+        severity_probs = sp.probs
+    except SeverityHeadUnavailable:
+        pass
+
     def region_mean(name: str) -> float:
         ys, xs = regions[name]
         return float(np.mean(inflammation[ys, xs]))
@@ -220,6 +258,9 @@ def analyze_image_bytes(image_bytes: bytes) -> dict:
             "lesion_count": float(lesion_count),
             "avg_lesion_prob_0_1": float(avg_lesion_prob),
             "inflammation_intensity_0_1": float(min(1.0, intensity / 0.55)),
+            "severity_probs_mild": float(severity_probs["mild"]) if severity_probs else float("nan"),
+            "severity_probs_moderate": float(severity_probs["moderate"]) if severity_probs else float("nan"),
+            "severity_probs_severe": float(severity_probs["severe"]) if severity_probs else float("nan"),
         },
         "region_scores_0_1": region_scores.as_dict(),
         "heatmap_png_base64": heat_png_b64,
