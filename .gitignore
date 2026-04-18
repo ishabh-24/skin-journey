@@ -1,0 +1,15 @@
+.DS_Store
+node_modules
+.expo
+dist
+build
+
+# Env / secrets
+.env
+.env.*
+
+# Python
+.venv
+__pycache__/
+*.pyc
+

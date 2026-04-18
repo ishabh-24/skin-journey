@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+import base64
+import io
+from dataclasses import dataclass
+from typing import Dict, Tuple
+
+import numpy as np
+from PIL import Image, ImageFilter
+
+from .ml_model import ModelUnavailable, predict_prob_mask
+
+
+@dataclass(frozen=True)
+class RegionScores:
+    forehead: float
+    left_cheek: float
+    right_cheek: float
+    jawline: float
+
+    def as_dict(self) -> Dict[str, float]:
+        return {
+            "forehead": float(self.forehead),
+            "left_cheek": float(self.left_cheek),
+            "right_cheek": float(self.right_cheek),
+            "jawline": float(self.jawline),
+        }
+
+
+def _to_rgb_array(img: Image.Image, max_side: int = 640) -> np.ndarray:
+    img = img.convert("RGB")
+    w, h = img.size
+    scale = min(1.0, float(max_side) / float(max(w, h)))
+    if scale < 1.0:
+        img = img.resize((int(w * scale), int(h * scale)))
+    arr = np.asarray(img).astype(np.float32) / 255.0
+    return arr
+
+
+def _simple_face_regions(arr: np.ndarray) -> Dict[str, Tuple[slice, slice]]:
+    """
+    Heuristic regions assuming a centered selfie.
+    Returns regions as [y, x] slices.
+    """
+    h, w, _ = arr.shape
+    y0, y1 = int(0.12 * h), int(0.95 * h)
+    x0, x1 = int(0.10 * w), int(0.90 * w)
+
+    face_h = y1 - y0
+    face_w = x1 - x0
+
+    forehead = (slice(y0, y0 + int(0.22 * face_h)), slice(x0 + int(0.20 * face_w), x0 + int(0.80 * face_w)))
+    left_cheek = (
+        slice(y0 + int(0.32 * face_h), y0 + int(0.70 * face_h)),
+        slice(x0 + int(0.10 * face_w), x0 + int(0.45 * face_w)),
+    )
+    right_cheek = (
+        slice(y0 + int(0.32 * face_h), y0 + int(0.70 * face_h)),
+        slice(x0 + int(0.55 * face_w), x0 + int(0.90 * face_w)),
+    )
+    jawline = (slice(y0 + int(0.70 * face_h), y0 + int(0.95 * face_h)), slice(x0 + int(0.18 * face_w), x0 + int(0.82 * face_w)))
+
+    return {
+        "forehead": forehead,
+        "left_cheek": left_cheek,
+        "right_cheek": right_cheek,
+        "jawline": jawline,
+        "full_face": (slice(y0, y1), slice(x0, x1)),
+    }
+
+
+def _redness_map(arr: np.ndarray) -> np.ndarray:
+    r = arr[:, :, 0]
+    g = arr[:, :, 1]
+    b = arr[:, :, 2]
+    # A simple erythema-ish proxy: red relative to green/blue.
+    redness = np.clip(r - 0.5 * g - 0.2 * b, 0.0, 1.0)
+    return redness
+
+
+def _texture_map(img: Image.Image) -> np.ndarray:
+    # Edge magnitude as a cheap “lesion/texture” proxy.
+    gray = img.convert("L").filter(ImageFilter.FIND_EDGES)
+    arr = np.asarray(gray).astype(np.float32) / 255.0
+    return arr
+
+
+def _normalize01(x: np.ndarray) -> np.ndarray:
+    lo = float(np.percentile(x, 5))
+    hi = float(np.percentile(x, 95))
+    if hi - lo < 1e-6:
+        return np.zeros_like(x)
+    return np.clip((x - lo) / (hi - lo), 0.0, 1.0)
+
+
+def _heatmap_png_base64(heat: np.ndarray) -> str:
+    """
+    heat: 2D array 0..1
+    Produces a red overlay heatmap PNG (RGBA) encoded as base64.
+    """
+    heat_u8 = (np.clip(heat, 0.0, 1.0) * 255.0).astype(np.uint8)
+    h, w = heat_u8.shape
+    rgba = np.zeros((h, w, 4), dtype=np.uint8)
+    rgba[:, :, 0] = 255  # red
+    rgba[:, :, 1] = 0
+    rgba[:, :, 2] = 0
+    rgba[:, :, 3] = heat_u8  # alpha
+    out = Image.fromarray(rgba, mode="RGBA")
+    buf = io.BytesIO()
+    out.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def _count_components(binary: np.ndarray) -> int:
+    """
+    Count connected components in a small binary mask (HxW, values {0,1}).
+    4-neighborhood. Designed for small masks (e.g., 160x160).
+    """
+    h, w = binary.shape
+    visited = np.zeros((h, w), dtype=np.uint8)
+    count = 0
+    for y in range(h):
+        for x in range(w):
+            if binary[y, x] == 0 or visited[y, x] == 1:
+                continue
+            count += 1
+            stack = [(y, x)]
+            visited[y, x] = 1
+            while stack:
+                cy, cx = stack.pop()
+                for ny, nx in ((cy - 1, cx), (cy + 1, cx), (cy, cx - 1), (cy, cx + 1)):
+                    if 0 <= ny < h and 0 <= nx < w and visited[ny, nx] == 0 and binary[ny, nx] == 1:
+                        visited[ny, nx] = 1
+                        stack.append((ny, nx))
+    return count
+
+
+def analyze_image_bytes(image_bytes: bytes) -> dict:
+    img = Image.open(io.BytesIO(image_bytes))
+    arr = _to_rgb_array(img)
+    regions = _simple_face_regions(arr)
+
+    # Try ML model first (lesion probability mask). Fall back to heuristic proxy.
+    inflammation: np.ndarray
+    used_model = False
+    lesion_area_pct = 0.0
+    lesion_count = 0
+    avg_lesion_prob = 0.0
+
+    try:
+        pred = predict_prob_mask(image_bytes, size=256)
+        prob = pred.prob_mask  # 256x256
+        inflammation = prob  # treat lesion prob as “hotspot” for MVP heatmap
+        used_model = True
+
+        lesion_binary = (prob > 0.5).astype(np.uint8)
+        lesion_area_pct = float(np.mean(lesion_binary))
+        avg_lesion_prob = float(np.mean(prob))
+
+        # Count blobs on downsampled mask for stability
+        small = Image.fromarray((lesion_binary * 255).astype(np.uint8), mode="L").resize((160, 160), resample=Image.NEAREST)
+        small_bin = (np.asarray(small) > 0).astype(np.uint8)
+        lesion_count = int(_count_components(small_bin))
+    except ModelUnavailable:
+        redness = _normalize01(_redness_map(arr))
+        texture = _normalize01(_texture_map(img.resize((arr.shape[1], arr.shape[0]))))
+        inflammation = np.clip(0.75 * redness + 0.25 * texture, 0.0, 1.0)
+
+    full = regions["full_face"]
+    face_infl = inflammation[full[0], full[1]]
+    intensity = float(np.mean(face_infl))
+
+    if used_model:
+        # Segmentation-derived scoring
+        lesion_area_score = min(1.0, lesion_area_pct / 0.18)
+        lesion_count_score = min(1.0, lesion_count / 45.0)
+        intensity_score = min(1.0, intensity / 0.45)
+        severity_0_10 = 10.0 * (0.45 * lesion_area_score + 0.35 * lesion_count_score + 0.20 * intensity_score)
+    else:
+        red_area_pct = float(np.mean(face_infl > 0.55))
+        texture = _normalize01(_texture_map(img.resize((arr.shape[1], arr.shape[0]))))
+        lesion_proxy = float(np.mean(texture[full[0], full[1]] > 0.65))
+
+        lesion_score = min(1.0, lesion_proxy / 0.12)
+        red_area_score = min(1.0, red_area_pct / 0.25)
+        intensity_score = min(1.0, intensity / 0.55)
+        severity_0_10 = 10.0 * (0.4 * lesion_score + 0.3 * red_area_score + 0.3 * intensity_score)
+
+    severity_0_10 = float(np.clip(severity_0_10, 0.0, 10.0))
+
+    if severity_0_10 < 3.5:
+        bucket = "mild"
+    elif severity_0_10 < 6.5:
+        bucket = "moderate"
+    else:
+        bucket = "severe"
+
+    def region_mean(name: str) -> float:
+        ys, xs = regions[name]
+        return float(np.mean(inflammation[ys, xs]))
+
+    region_scores = RegionScores(
+        forehead=region_mean("forehead"),
+        left_cheek=region_mean("left_cheek"),
+        right_cheek=region_mean("right_cheek"),
+        jawline=region_mean("jawline"),
+    )
+
+    # Downsample heatmap for transport.
+    heat_small = Image.fromarray((inflammation * 255.0).astype(np.uint8), mode="L").resize((160, 160))
+    heat = np.asarray(heat_small).astype(np.float32) / 255.0
+    heat_png_b64 = _heatmap_png_base64(heat)
+
+    return {
+        "severity_score_0_10": severity_0_10,
+        "severity_bucket": bucket,
+        "components": {
+            "used_model": float(1.0 if used_model else 0.0),
+            "lesion_area_pct_0_1": float(lesion_area_pct),
+            "lesion_count": float(lesion_count),
+            "avg_lesion_prob_0_1": float(avg_lesion_prob),
+            "inflammation_intensity_0_1": float(min(1.0, intensity / 0.55)),
+        },
+        "region_scores_0_1": region_scores.as_dict(),
+        "heatmap_png_base64": heat_png_b64,
+    }
+

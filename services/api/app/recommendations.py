@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+from typing import Literal
+
+from .models import RecommendationResponse, SeverityBucket
+
+
+def recommend(
+    *,
+    severity_bucket: SeverityBucket,
+    worsening_streak_days: int = 0,
+    no_improvement_days: int = 0,
+    cystic_suspected: bool = False,
+) -> RecommendationResponse:
+    derm_trigger = (
+        cystic_suspected
+        or worsening_streak_days >= 3
+        or (severity_bucket == "severe")
+        or (no_improvement_days >= 14 and severity_bucket in ("moderate", "severe"))
+    )
+
+    if derm_trigger:
+        return RecommendationResponse(
+            decision="derm",
+            title="Consider dermatology care",
+            bullets=[
+                "Your trend/severity suggests you may benefit from prescription options.",
+                "If you have pain, scarring, or deep bumps, try to book a visit soon.",
+                "If symptoms worsen rapidly, consider urgent care.",
+            ],
+            cautions=[
+                "This is not a medical diagnosis.",
+            ],
+        )
+
+    if severity_bucket == "mild":
+        return RecommendationResponse(
+            decision="otc",
+            title="OTC routine (mild acne)",
+            bullets=[
+                "Gentle cleanser (fragrance-free), 1–2x/day",
+                "Salicylic acid (0.5–2%) a few nights/week",
+                "Spot treat with benzoyl peroxide (2.5%) if tolerated",
+                "Moisturizer + sunscreen daily",
+            ],
+            cautions=[
+                "Introduce one active at a time to reduce irritation.",
+            ],
+        )
+
+    return RecommendationResponse(
+        decision="otc",
+        title="OTC routine (moderate acne)",
+        bullets=[
+            "Gentle cleanser + moisturizer + sunscreen daily",
+            "Benzoyl peroxide wash (2.5–5%) in the morning if tolerated",
+            "Adapalene (OTC retinoid) at night, start 2–3x/week then increase",
+            "Avoid harsh scrubs; keep routine consistent for 8–12 weeks",
+        ],
+        cautions=[
+            "Retinoids can cause dryness; use moisturizer and go slowly.",
+            "Avoid retinoids if pregnant; consult a clinician.",
+        ],
+    )
+
