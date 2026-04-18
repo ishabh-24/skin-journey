@@ -136,7 +136,7 @@ def _count_components(binary: np.ndarray) -> int:
     return count
 
 
-def analyze_image_bytes(image_bytes: bytes) -> dict:
+def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> dict:
     img = Image.open(io.BytesIO(image_bytes))
     arr = _to_rgb_array(img)
     regions = _simple_face_regions(arr)
@@ -151,12 +151,18 @@ def analyze_image_bytes(image_bytes: bytes) -> dict:
     try:
         pred = predict_prob_mask(image_bytes, size=256)
         prob = pred.prob_mask  # 256x256
-        inflammation = prob  # treat lesion prob as “hotspot” for MVP heatmap
+        # Resize model output to match `arr` spatial resolution so region slicing
+        # and intensity scoring are consistent.
+        ah, aw, _ = arr.shape
+        prob_img = Image.fromarray((np.clip(prob, 0.0, 1.0) * 255).astype(np.uint8), mode="L").resize(
+            (aw, ah), resample=Image.BILINEAR
+        )
+        inflammation = (np.asarray(prob_img).astype(np.float32) / 255.0)
         used_model = True
 
-        lesion_binary = (prob > 0.5).astype(np.uint8)
+        lesion_binary = (inflammation > 0.5).astype(np.uint8)
         lesion_area_pct = float(np.mean(lesion_binary))
-        avg_lesion_prob = float(np.mean(prob))
+        avg_lesion_prob = float(np.mean(inflammation))
 
         # Count blobs on downsampled mask for stability
         small = Image.fromarray((lesion_binary * 255).astype(np.uint8), mode="L").resize((160, 160), resample=Image.NEAREST)
@@ -196,9 +202,23 @@ def analyze_image_bytes(image_bytes: bytes) -> dict:
     else:
         bucket = "severe"
 
+    # If this is a dataset image with a known `levleX_` label, expose it as debug components
+    # so we can spot model-vs-label mismatches quickly (does not affect scoring logic).
+    filename_level = float("nan")
+    if filename:
+        lower = filename.lower()
+        j = lower.find("levle")
+        if j != -1 and j + 5 < len(lower):
+            ch = lower[j + 5]
+            if ch.isdigit():
+                lvl = int(ch)
+                if 0 <= lvl <= 3:
+                    filename_level = float(lvl)
+
     severity_probs: dict[str, float] | None = None
+    severity_head_pred_0_2 = float("nan")
     try:
-        # Feature vector aligned with ml/severity_features.py
+        # Feature vector aligned with ml/train_severity_head.py
         rgb01 = _to_rgb_array(img, max_side=512)
         red = _redness_map(rgb01)
         # bring prob/inflammation to same shape as rgb01
@@ -218,20 +238,60 @@ def analyze_image_bytes(image_bytes: bytes) -> dict:
         mass = float(np.mean(infl_face))
         area_t20 = float(np.mean(infl_face > 0.20))
         area_t35 = float(np.mean(infl_face > 0.35))
+        intensity_face = float(np.mean(infl_face))
+
+        lesion_bin = (infl_face > 0.5).astype(np.uint8)
+        lesion_area_bin = float(np.mean(lesion_bin))
+        small = Image.fromarray((lesion_bin * 255).astype(np.uint8), mode="L").resize((160, 160), resample=Image.NEAREST)
+        lesion_count_face = float(_count_components((np.asarray(small) > 0).astype(np.uint8)))
 
         r = red_face.reshape(-1)
         red_mean = float(np.mean(red_face))
         red_top = float(np.mean(np.partition(r, -k)[-k:]))
 
+        # Texture features (edge magnitude) on the same face crop
+        face_img = Image.fromarray((rgb01 * 255).astype(np.uint8), mode="RGB").crop((face[1].start, face[0].start, face[1].stop, face[0].stop))
+        tex = _normalize01(_texture_map(face_img))
+        tex_p = tex.reshape(-1)
+        tex_top = float(np.mean(np.partition(tex_p, -k)[-k:]))
+        tex_mean = float(np.mean(tex))
+
         feats = np.asarray(
-            [mass, topk, area_t20, area_t35, red_mean, red_top, red_mean * mass, red_top * topk],
+            [
+                mass,
+                topk,
+                area_t20,
+                area_t35,
+                red_mean,
+                red_top,
+                lesion_area_bin,
+                lesion_count_face,
+                intensity_face,
+                tex_mean,
+                tex_top,
+                red_top * topk,
+            ],
             dtype=np.float32,
         )
 
         sp = predict_severity(feats)
         severity_probs = sp.probs
+        severity_head_pred_0_2 = float(0 if sp.bucket == "mild" else (1 if sp.bucket == "moderate" else 2))
     except SeverityHeadUnavailable:
         pass
+
+    # Confidence-based bucket override using severity head (keeps numeric score stable).
+    if severity_probs:
+        p_mild = float(severity_probs.get("mild", 0.0))
+        p_mod = float(severity_probs.get("moderate", 0.0))
+        p_sev = float(severity_probs.get("severe", 0.0))
+        # Override only when one class is clearly dominant.
+        if p_sev >= 0.60:
+            bucket = "severe"
+        elif p_mod >= 0.60:
+            bucket = "moderate"
+        elif p_mild >= 0.60:
+            bucket = "mild"
 
     def region_mean(name: str) -> float:
         ys, xs = regions[name]
@@ -261,6 +321,8 @@ def analyze_image_bytes(image_bytes: bytes) -> dict:
             "severity_probs_mild": float(severity_probs["mild"]) if severity_probs else float("nan"),
             "severity_probs_moderate": float(severity_probs["moderate"]) if severity_probs else float("nan"),
             "severity_probs_severe": float(severity_probs["severe"]) if severity_probs else float("nan"),
+            "filename_level_0_3": float(filename_level),
+            "severity_head_pred_0_2": float(severity_head_pred_0_2),
         },
         "region_scores_0_1": region_scores.as_dict(),
         "heatmap_png_base64": heat_png_b64,

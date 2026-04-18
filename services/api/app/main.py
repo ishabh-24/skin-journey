@@ -27,7 +27,7 @@ def health() -> dict:
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(image: UploadFile = File(...)) -> AnalyzeResponse:
     data = await image.read()
-    result = analyze_image_bytes(data)
+    result = analyze_image_bytes(data, filename=image.filename)
     return AnalyzeResponse(**result)
 
 

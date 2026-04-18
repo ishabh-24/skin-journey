@@ -41,6 +41,15 @@ def _bucket_3class(level_0_3: int) -> int:
     return 2
 
 
+def _bucket_4class(level_0_3: int) -> int:
+    """
+    Identity mapping: 4 levels -> 4 classes.
+    """
+    if level_0_3 < 0 or level_0_3 > 3:
+        raise ValueError(f"level out of range 0..3: {level_0_3}")
+    return level_0_3
+
+
 def _to_rgb01(img: Image.Image, max_side: int = 512) -> np.ndarray:
     img = img.convert("RGB")
     w, h = img.size
@@ -104,6 +113,41 @@ def _features_from_image_and_inflammation(img: Image.Image, infl01: np.ndarray) 
     return feats
 
 
+def _count_components(binary: np.ndarray) -> int:
+    h, w = binary.shape
+    visited = np.zeros((h, w), dtype=np.uint8)
+    cnt = 0
+    for y0 in range(h):
+        for x0 in range(w):
+            if binary[y0, x0] == 0 or visited[y0, x0] == 1:
+                continue
+            cnt += 1
+            stack = [(y0, x0)]
+            visited[y0, x0] = 1
+            while stack:
+                y, x = stack.pop()
+                for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+                    if 0 <= ny < h and 0 <= nx < w and visited[ny, nx] == 0 and binary[ny, nx] == 1:
+                        visited[ny, nx] = 1
+                        stack.append((ny, nx))
+    return cnt
+
+
+def _normalize01(x: np.ndarray) -> np.ndarray:
+    lo = float(np.percentile(x, 5))
+    hi = float(np.percentile(x, 95))
+    if hi - lo < 1e-6:
+        return np.zeros_like(x)
+    return np.clip((x - lo) / (hi - lo), 0.0, 1.0)
+
+
+def _texture_map(img: Image.Image) -> np.ndarray:
+    from PIL import ImageFilter
+
+    gray = img.convert("L").filter(ImageFilter.FIND_EDGES)
+    return np.asarray(gray).astype(np.float32) / 255.0
+
+
 def _index_masks(mask_dir: Path) -> Dict[str, Path]:
     """
     Masks are named like '<image_stem>.png' but stems can include .jpg in the name
@@ -162,6 +206,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--num-workers", type=int, default=0)  # kept for compatibility; forced to 0
     ap.add_argument("--use-unet", action="store_true", help="Featurize using U-Net probability masks (matches API).")
+    ap.add_argument("--num-classes", type=int, default=3, choices=[3, 4], help="Train 3 or 4 severity classes.")
     args = ap.parse_args()
 
     images_dir = Path(args.images)
@@ -172,14 +217,23 @@ def main() -> None:
     random.seed(args.seed)
     np.random.seed(args.seed)
 
-    examples = _build_examples(images_dir, masks_dir)
+    # Build examples and map labels
+    examples_raw = _build_examples(images_dir, masks_dir)
+    examples = []
+    for ip, mp, _y3 in examples_raw:
+        lvl = _label_from_filename(ip.name)
+        if args.num_classes == 4:
+            yy = _bucket_4class(lvl)
+        else:
+            yy = _bucket_3class(lvl)
+        examples.append((ip, mp, yy))
     train_ex, val_ex = _split(examples, seed=args.seed)
 
     _unet_cached = None
 
     # Precompute features (fast enough for this dataset; keeps training simple)
     def compute(ex_list):
-        X = np.zeros((len(ex_list), 8), dtype=np.float32)
+        X = np.zeros((len(ex_list), 12), dtype=np.float32)
         y = np.zeros((len(ex_list),), dtype=np.int64)
         if args.use_unet:
             import torch
@@ -223,7 +277,49 @@ def main() -> None:
                 mask = Image.open(mp)
                 infl01 = (np.asarray(mask.convert("L")).astype(np.float32) / 255.0)
 
-            X[i] = _features_from_image_and_inflammation(img, infl01)
+            base8 = _features_from_image_and_inflammation(img, infl01)
+
+            rgb01 = _to_rgb01(img, max_side=512)
+            face_rgb = _simple_face_crop(rgb01)
+            mh, mw = face_rgb.shape[:2]
+            infl_img = Image.fromarray((np.clip(infl01, 0.0, 1.0) * 255).astype(np.uint8), mode="L").resize(
+                (mw, mh), resample=Image.BILINEAR
+            )
+            infl_face = np.asarray(infl_img).astype(np.float32) / 255.0
+
+            intensity = float(np.mean(infl_face))
+            lesion_bin = (infl_face > 0.5).astype(np.uint8)
+            lesion_area = float(np.mean(lesion_bin))
+            small = Image.fromarray((lesion_bin * 255).astype(np.uint8), mode="L").resize((160, 160), resample=Image.NEAREST)
+            lesion_count = float(_count_components((np.asarray(small) > 0).astype(np.uint8)))
+
+            face_img = Image.fromarray((face_rgb * 255).astype(np.uint8), mode="RGB")
+            tex = _normalize01(_texture_map(face_img))
+            p = infl_face.reshape(-1)
+            k = max(1, int(0.02 * p.size))
+            tex_p = tex.reshape(-1)
+            tex_top = float(np.mean(np.partition(tex_p, -k)[-k:]))
+            tex_mean = float(np.mean(tex))
+
+            red_top_times_topk = float(base8[5] * base8[1])
+
+            X[i] = np.asarray(
+                [
+                    float(base8[0]),
+                    float(base8[1]),
+                    float(base8[2]),
+                    float(base8[3]),
+                    float(base8[4]),
+                    float(base8[5]),
+                    lesion_area,
+                    lesion_count,
+                    intensity,
+                    tex_mean,
+                    tex_top,
+                    red_top_times_topk,
+                ],
+                dtype=np.float32,
+            )
             y[i] = yy
             if (i + 1) % 200 == 0 or (i + 1) == len(ex_list):
                 print(f"featurized {i+1}/{len(ex_list)}", flush=True)
@@ -232,7 +328,7 @@ def main() -> None:
     Xtr, ytr = compute(train_ex)
     Xva, yva = compute(val_ex)
 
-    class_counts = np.bincount(ytr, minlength=3).astype(np.float32)
+    class_counts = np.bincount(ytr, minlength=int(args.num_classes)).astype(np.float32)
     # inverse frequency weights, normalized
     w = (class_counts.sum() / np.clip(class_counts, 1.0, None))
     w = w / w.mean()
@@ -244,10 +340,10 @@ def main() -> None:
         def __init__(self) -> None:
             super().__init__()
             self.net = nn.Sequential(
-                nn.Linear(8, 16),
+                nn.Linear(12, 16),
                 nn.ReLU(),
                 nn.Dropout(p=0.0),
-                nn.Linear(16, 3),
+                nn.Linear(16, int(args.num_classes)),
             )
 
         def forward(self, x):  # type: ignore[no-untyped-def]
@@ -302,9 +398,15 @@ def main() -> None:
 
         if val_acc > best_acc:
             best_acc = val_acc
+            if int(args.num_classes) == 4:
+                label_mapping = {"0": "level0", "1": "level1", "2": "level2", "3": "level3"}
+            else:
+                label_mapping = {"0": "mild", "1": "moderate", "2": "severe"}
+
             ckpt = {
                 "model": model.state_dict(),
                 "meta": {
+                    "in_dim": 12,
                     "features": [
                         "mass",
                         "topk",
@@ -312,10 +414,15 @@ def main() -> None:
                         "area_t35",
                         "red_mean",
                         "red_top",
-                        "red_mean_x_mass",
+                        "lesion_area_bin_t50",
+                        "lesion_count_t50",
+                        "intensity_mean",
+                        "texture_mean",
+                        "texture_top",
                         "red_top_x_topk",
                     ],
-                    "label_mapping": {"0": "mild", "1": "moderate", "2": "severe"},
+                    "label_mapping": label_mapping,
+                    "num_classes": int(args.num_classes),
                     "source": {"images": str(images_dir), "masks": str(masks_dir)},
                 },
             }

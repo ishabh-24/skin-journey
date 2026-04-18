@@ -6,3 +6,7 @@ tqdm>=4.66.0
 matplotlib>=3.8.0
 opencv-python>=4.9.0.0
 requests>=2.31.0
+
+# SAM mask generation (install one of these after requirements are installed):
+#   pip install git+https://github.com/ChaoningZhang/MobileSAM.git          # fast, ~39 MB
+#   pip install git+https://github.com/facebookresearch/segment-anything.git # ViT-B/L/H

@@ -15,7 +15,7 @@ class SeverityHeadUnavailable(RuntimeError):
 @dataclass(frozen=True)
 class SeverityPred:
     bucket: SeverityBucket
-    probs: Dict[SeverityBucket, float]
+    probs: Dict[str, float]
 
 
 _CACHED = None
@@ -44,23 +44,40 @@ def _load():
                 nn.Linear(8, 16),
                 nn.ReLU(),
                 nn.Dropout(p=0.0),
-                nn.Linear(16, 3),
+                nn.Linear(16, 3),  # placeholder; replaced after reading checkpoint
             )
 
         def forward(self, x):  # type: ignore[no-untyped-def]
             return self.net(x)
 
-    model = _MLP()
-
     obj = torch.load(str(ckpt_path), map_location="cpu")
     state_dict = obj["model"] if isinstance(obj, dict) and "model" in obj else obj
+    out_dim = int(state_dict["net.3.weight"].shape[0]) if isinstance(state_dict, dict) else 3
+    meta = obj.get("meta", {}) if isinstance(obj, dict) else {}
+    in_dim = int(meta.get("in_dim", 8))
+
+    class _MLPOut(nn.Module):
+        def __init__(self, in_dim: int, out_dim: int) -> None:
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Linear(in_dim, 16),
+                nn.ReLU(),
+                nn.Dropout(p=0.0),
+                nn.Linear(16, out_dim),
+            )
+
+        def forward(self, x):  # type: ignore[no-untyped-def]
+            return self.net(x)
+
+    model = _MLPOut(in_dim, out_dim)
     try:
         model.load_state_dict(state_dict, strict=True)
     except Exception as e:
         raise SeverityHeadUnavailable(f"failed to load severity head weights: {e}") from e
     model.eval()
 
-    _CACHED = (model, torch)
+    label_mapping = meta.get("label_mapping", {})
+    _CACHED = (model, torch, out_dim, label_mapping, in_dim)
     return _CACHED
 
 
@@ -69,18 +86,19 @@ def predict_severity(features_8: "object") -> SeverityPred:
     features_8: array-like length 8 (float32 preferred)
     Output classes are ordered: mild, moderate, severe.
     """
-    model, torch = _load()
+    model, torch, out_dim, label_mapping, in_dim = _load()
 
-    x = torch.as_tensor(features_8, dtype=torch.float32).reshape(1, 8)
+    x = torch.as_tensor(features_8, dtype=torch.float32).reshape(1, int(in_dim))
     with torch.no_grad():
         logits = model(x)
         probs_t = torch.softmax(logits, dim=1)[0]
 
-    probs: Dict[SeverityBucket, float] = {
-        "mild": float(probs_t[0].item()),
-        "moderate": float(probs_t[1].item()),
-        "severe": float(probs_t[2].item()),
-    }
-    bucket: SeverityBucket = max(probs, key=lambda k: probs[k])  # type: ignore[assignment]
-    return SeverityPred(bucket=bucket, probs=probs)
+    probs_list = [float(probs_t[i].item()) for i in range(out_dim)]
+
+    # 3-class mild/moderate/severe (recommended for stability)
+    p0, p1, p2 = probs_list[:3]
+    probs_bucket = {"mild": p0, "moderate": p1, "severe": p2}
+
+    bucket: SeverityBucket = max(probs_bucket, key=lambda k: probs_bucket[k])  # type: ignore[assignment]
+    return SeverityPred(bucket=bucket, probs=probs_bucket)
 
