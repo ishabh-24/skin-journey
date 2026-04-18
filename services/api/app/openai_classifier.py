@@ -8,21 +8,14 @@ when OPENAI_API_KEY is missing or the request fails.
 
 from __future__ import annotations
 
-import base64
-import io
 import json
 import logging
 import os
-import re
 from dataclasses import dataclass
 
-from PIL import Image
+from .openai_vision_util import extract_json_object, image_bytes_to_jpeg_data_uri
 
 logger = logging.getLogger(__name__)
-
-# Max edge length before JPEG encode (keeps payloads reasonable for the API).
-_MAX_IMAGE_SIDE = 1536
-_JPEG_QUALITY = 88
 
 
 class OpenAIClassifierUnavailable(Exception):
@@ -70,39 +63,6 @@ def _bucket_from_score_0_10(score: float) -> str:
     return "severe"
 
 
-def _image_bytes_to_jpeg_data_uri(image_bytes: bytes) -> str:
-    """Decode arbitrary image bytes, normalize to RGB JPEG, correct MIME for the API."""
-    with Image.open(io.BytesIO(image_bytes)) as img:
-        img = img.convert("RGB")
-        w, h = img.size
-        m = max(w, h)
-        if m > _MAX_IMAGE_SIDE:
-            scale = _MAX_IMAGE_SIDE / m
-            img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.Resampling.LANCZOS)
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
-        jpeg_bytes = buf.getvalue()
-    b64 = base64.b64encode(jpeg_bytes).decode("ascii")
-    return f"data:image/jpeg;base64,{b64}"
-
-
-def _extract_json_object(raw: str) -> str:
-    """Handle markdown fences, optional language tags, leading/trailing prose, one-line fences."""
-    text = raw.strip()
-    # Opening ``` or ```json
-    text = re.sub(r"^\s*```[a-zA-Z0-9]*\s*", "", text)
-    text = text.strip()
-    # Closing fence (handles single-line ```{...}```)
-    if text.endswith("```"):
-        text = text[: text.rfind("```")].strip()
-    # Brace slice if model added a preamble (e.g. "Here is the JSON: {...}")
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        text = text[start : end + 1]
-    return text.strip()
-
-
 def classify_severity(image_bytes: bytes) -> OpenAISeverityResult:
     """Call the OpenAI API to classify acne severity from an image.
 
@@ -124,7 +84,7 @@ def classify_severity(image_bytes: bytes) -> OpenAISeverityResult:
         ) from exc
 
     try:
-        data_uri = _image_bytes_to_jpeg_data_uri(image_bytes)
+        data_uri = image_bytes_to_jpeg_data_uri(image_bytes)
     except Exception as exc:
         raise OpenAIClassifierUnavailable(f"could not decode image for OpenAI: {exc}") from exc
 
@@ -153,7 +113,7 @@ def classify_severity(image_bytes: bytes) -> OpenAISeverityResult:
         )
 
         raw = response.choices[0].message.content or ""
-        raw_json = _extract_json_object(raw)
+        raw_json = extract_json_object(raw)
         parsed = json.loads(raw_json)
 
         model_bucket = str(parsed["severity_bucket"]).lower()

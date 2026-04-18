@@ -68,7 +68,11 @@ export function TimelineScreen() {
                 {fmtDate(item.createdAt)} · {item.severityBucket.toUpperCase()}
               </Text>
               <Text style={styles.rowBody}>
-                Severity {item.severityScore.toFixed(1)} · Primary zone {primaryRegion(item.regionScores).replace('_', ' ')}
+                Acne {item.severityScore.toFixed(1)} ({item.severityBucket}) · Eczema{' '}
+                {item.eczemaLikelihood.toFixed(1)} ({item.eczemaBucket.replace(/_/g, ' ')})
+              </Text>
+              <Text style={[styles.rowBody, { marginTop: 2 }]}>
+                Primary zone {primaryRegion(item.regionScores).replace('_', ' ')}
               </Text>
               <MiniBars entries={entries} highlightId={item.id} />
             </View>

@@ -4,8 +4,8 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .analysis import analyze_image_bytes
-from .models import AnalyzeResponse, RecommendationResponse, SeverityBucket
-from .recommendations import recommend
+from .models import AnalyzeResponse, EczemaBucket, RecommendationResponse, SeverityBucket
+from .recommendations import recommend, recommend_eczema
 
 
 app = FastAPI(title="Skin Journey AI API", version="0.1.0")
@@ -44,4 +44,9 @@ def get_recommendation(
         no_improvement_days=no_improvement_days,
         cystic_suspected=cystic_suspected,
     )
+
+
+@app.get("/recommend-eczema", response_model=RecommendationResponse)
+def get_eczema_recommendation(eczema_bucket: EczemaBucket) -> RecommendationResponse:
+    return recommend_eczema(eczema_bucket=eczema_bucket)
 

@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-import type { RegionScores, SeverityBucket, TimelineEntry } from '../types/models';
+import type { EczemaBucket, RegionScores, SeverityBucket, TimelineEntry } from '../types/models';
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -24,9 +24,20 @@ export async function initDb() {
       severityScore REAL NOT NULL,
       severityBucket TEXT NOT NULL,
       regionScoresJson TEXT NOT NULL,
-      heatmapUri TEXT NOT NULL
+      heatmapUri TEXT NOT NULL,
+      eczemaBucket TEXT NOT NULL DEFAULT 'none',
+      eczemaLikelihood REAL NOT NULL DEFAULT 0
     );
   `);
+
+  const cols = await db.getAllAsync<{ name: string }>('PRAGMA table_info(entries)');
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has('eczemaBucket')) {
+    await db.execAsync(`ALTER TABLE entries ADD COLUMN eczemaBucket TEXT NOT NULL DEFAULT 'none';`);
+  }
+  if (!names.has('eczemaLikelihood')) {
+    await db.execAsync(`ALTER TABLE entries ADD COLUMN eczemaLikelihood REAL NOT NULL DEFAULT 0;`);
+  }
 }
 
 export async function getSetting(key: string): Promise<string | null> {
@@ -50,8 +61,8 @@ export async function setSetting(key: string, value: string): Promise<void> {
 export async function insertEntry(entry: TimelineEntry): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    `INSERT INTO entries (id, createdAt, imageUri, severityScore, severityBucket, regionScoresJson, heatmapUri)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO entries (id, createdAt, imageUri, severityScore, severityBucket, regionScoresJson, heatmapUri, eczemaBucket, eczemaLikelihood)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       entry.id,
       entry.createdAt,
@@ -60,6 +71,8 @@ export async function insertEntry(entry: TimelineEntry): Promise<void> {
       entry.severityBucket,
       JSON.stringify(entry.regionScores),
       entry.heatmapUri,
+      entry.eczemaBucket,
+      entry.eczemaLikelihood,
     ],
   );
 }
@@ -74,6 +87,8 @@ export async function listEntries(limit = 60): Promise<TimelineEntry[]> {
     severityBucket: SeverityBucket;
     regionScoresJson: string;
     heatmapUri: string;
+    eczemaBucket?: EczemaBucket;
+    eczemaLikelihood?: number;
   }>(`SELECT * FROM entries ORDER BY createdAt DESC LIMIT ?`, [limit]);
 
   return rows.map((r) => ({
@@ -82,6 +97,8 @@ export async function listEntries(limit = 60): Promise<TimelineEntry[]> {
     imageUri: r.imageUri,
     severityScore: Number(r.severityScore),
     severityBucket: r.severityBucket,
+    eczemaBucket: (r.eczemaBucket ?? 'none') as EczemaBucket,
+    eczemaLikelihood: Number(r.eczemaLikelihood ?? 0),
     regionScores: JSON.parse(r.regionScoresJson) as RegionScores,
     heatmapUri: r.heatmapUri,
   }));
@@ -97,6 +114,8 @@ export async function getLatestEntries(n = 14): Promise<TimelineEntry[]> {
     severityBucket: SeverityBucket;
     regionScoresJson: string;
     heatmapUri: string;
+    eczemaBucket?: EczemaBucket;
+    eczemaLikelihood?: number;
   }>(`SELECT * FROM entries ORDER BY createdAt DESC LIMIT ?`, [n]);
 
   return rows.map((r) => ({
@@ -105,6 +124,8 @@ export async function getLatestEntries(n = 14): Promise<TimelineEntry[]> {
     imageUri: r.imageUri,
     severityScore: Number(r.severityScore),
     severityBucket: r.severityBucket,
+    eczemaBucket: (r.eczemaBucket ?? 'none') as EczemaBucket,
+    eczemaLikelihood: Number(r.eczemaLikelihood ?? 0),
     regionScores: JSON.parse(r.regionScoresJson) as RegionScores,
     heatmapUri: r.heatmapUri,
   }));

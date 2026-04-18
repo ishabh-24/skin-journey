@@ -10,6 +10,7 @@ from PIL import Image, ImageFilter
 
 from .ml_model import ModelUnavailable, predict_prob_mask
 from .openai_classifier import OpenAIClassifierUnavailable, classify_severity
+from .openai_eczema_classifier import OpenAIEczemaClassifierUnavailable, classify_eczema
 from .severity_head import SeverityHeadUnavailable, predict_severity
 
 
@@ -305,6 +306,19 @@ def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> d
     except OpenAIClassifierUnavailable:
         pass  # keep local scores as-is
 
+    # ── OpenAI eczema / atopic pattern assessment ───────────────────────────
+    eczema_bucket = "none"
+    eczema_likelihood_0_10 = 0.0
+    used_openai_eczema = False
+    oai_eczema = None
+    try:
+        oai_eczema = classify_eczema(image_bytes)
+        eczema_bucket = oai_eczema.eczema_bucket
+        eczema_likelihood_0_10 = oai_eczema.eczema_likelihood_0_10
+        used_openai_eczema = True
+    except OpenAIEczemaClassifierUnavailable:
+        pass
+
     def region_mean(name: str) -> float:
         ys, xs = regions[name]
         return float(np.mean(inflammation[ys, xs]))
@@ -324,9 +338,12 @@ def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> d
     return {
         "severity_score_0_10": severity_0_10,
         "severity_bucket": bucket,
+        "eczema_bucket": eczema_bucket,
+        "eczema_likelihood_0_10": eczema_likelihood_0_10,
         "components": {
             "used_model": float(1.0 if used_model else 0.0),
             "used_openai": float(1.0 if used_openai else 0.0),
+            "used_openai_eczema": float(1.0 if used_openai_eczema else 0.0),
             "lesion_area_pct_0_1": float(lesion_area_pct),
             "lesion_count": float(lesion_count),
             "avg_lesion_prob_0_1": float(avg_lesion_prob),
@@ -343,6 +360,11 @@ def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> d
             "openai_model_bucket_matched_score": (
                 float(1.0 if oai_result.model_bucket_matched_score else 0.0)
                 if oai_result is not None
+                else float("nan")
+            ),
+            "openai_eczema_model_bucket_matched_score": (
+                float(1.0 if oai_eczema.model_bucket_matched_score else 0.0)
+                if oai_eczema is not None
                 else float("nan")
             ),
         },

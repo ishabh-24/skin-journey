@@ -1,4 +1,9 @@
-import type { AnalyzeResponse, RecommendationResponse, SeverityBucket } from '../types/models';
+import type {
+  AnalyzeResponse,
+  EczemaBucket,
+  RecommendationResponse,
+  SeverityBucket,
+} from '../types/models';
 
 export async function analyzeImage(opts: { apiBaseUrl: string; imageUri: string }): Promise<AnalyzeResponse> {
   const { apiBaseUrl, imageUri } = opts;
@@ -42,6 +47,22 @@ export async function getRecommendation(opts: {
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`Recommend failed (${res.status}): ${text || res.statusText}`);
+  }
+  return (await res.json()) as RecommendationResponse;
+}
+
+export async function getEczemaRecommendation(opts: {
+  apiBaseUrl: string;
+  eczemaBucket: EczemaBucket;
+}): Promise<RecommendationResponse> {
+  const { apiBaseUrl, eczemaBucket } = opts;
+  const url = new URL(`${apiBaseUrl.replace(/\/+$/, '')}/recommend-eczema`);
+  url.searchParams.set('eczema_bucket', eczemaBucket);
+
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Eczema recommend failed (${res.status}): ${text || res.statusText}`);
   }
   return (await res.json()) as RecommendationResponse;
 }

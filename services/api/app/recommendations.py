@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from .models import RecommendationResponse, SeverityBucket
+from .models import EczemaBucket, RecommendationResponse, SeverityBucket
 
 
 def recommend(
@@ -60,6 +60,54 @@ def recommend(
         cautions=[
             "Retinoids can cause dryness; use moisturizer and go slowly.",
             "Avoid retinoids if pregnant; consult a clinician.",
+        ],
+    )
+
+
+def recommend_eczema(*, eczema_bucket: EczemaBucket) -> RecommendationResponse:
+    """OTC vs dermatology style guidance for eczema-type patterns (not a diagnosis)."""
+    if eczema_bucket == "severe_eczema":
+        return RecommendationResponse(
+            decision="derm",
+            title="Eczema pattern looks significantly inflamed",
+            bullets=[
+                "Strong facial redness, weeping, crusting, or widespread rash merits "
+                "timely medical evaluation — prescription anti-inflammatories are often needed.",
+                "Until seen: gentle fragrance-free cleanser, thick bland moisturizer after "
+                "lukewarm rinses, avoid scratching and new products.",
+                "Seek urgent care if rapidly spreading pain, fever, or eye involvement.",
+            ],
+            cautions=[
+                "This is not a medical diagnosis; photos can miss important context.",
+            ],
+        )
+
+    if eczema_bucket == "mild_eczema":
+        return RecommendationResponse(
+            decision="otc",
+            title="Possible mild eczema-type dryness (OTC care)",
+            bullets=[
+                "Use a thick fragrance-free cream or ointment moisturizer at least twice daily "
+                "and after washing.",
+                "Short lukewarm showers; avoid harsh soaps, scrubs, and fragranced products.",
+                "Identify and reduce triggers (wind, sweat, certain cosmetics).",
+                "If itching persists beyond ~2 weeks or worsens, book a clinician visit.",
+            ],
+            cautions=[
+                "If OTC care stings or flares the skin, stop and get professional advice.",
+            ],
+        )
+
+    return RecommendationResponse(
+        decision="otc",
+        title="No clear eczema pattern detected",
+        bullets=[
+            "Skin appears closer to normal or non-eczema dryness from this photo alone.",
+            "Maintain gentle cleanser + daily moisturizer + sunscreen.",
+            "Re-check with new photos if you develop itchy, scaly patches that persist.",
+        ],
+        cautions=[
+            "Generic dryness and early eczema can look similar; when in doubt, ask a clinician.",
         ],
     )
 

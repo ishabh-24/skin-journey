@@ -2,23 +2,38 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { analyzeImage, getRecommendation } from '../lib/api';
+import { analyzeImage, getEczemaRecommendation, getRecommendation } from '../lib/api';
 import { getLatestEntries, getSetting, insertEntry } from '../lib/db';
 import { writeBase64Png } from '../lib/files';
 import { computeNoImprovementDays, computeWorseningStreakDays, primaryRegion } from '../lib/trends';
-import type { TimelineEntry } from '../types/models';
+import type { EczemaBucket, TimelineEntry } from '../types/models';
 import type { CaptureStackParamList } from '../types/nav';
 
 type Props = NativeStackScreenProps<CaptureStackParamList, 'Analysis'>;
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 
+function eczemaBucketLabel(b: EczemaBucket): string {
+  if (b === 'none') return 'No eczema pattern';
+  if (b === 'mild_eczema') return 'Mild eczema-type';
+  return 'Severe eczema-type';
+}
+
 export function AnalysisScreen({ route, navigation }: Props) {
   const { imageUri } = route.params;
   const [apiBaseUrl, setApiBaseUrl] = useState(DEFAULT_API_BASE_URL);
   const [loading, setLoading] = useState(false);
   const [entry, setEntry] = useState<TimelineEntry | null>(null);
-  const [rec, setRec] = useState<{ title: string; decision: string; bullets: string[]; cautions: string[] } | null>(null);
+  const [rec, setRec] = useState<{ title: string; decision: string; bullets: string[]; cautions: string[] } | null>(
+    null,
+  );
+  const [eczemaRec, setEczemaRec] = useState<{
+    title: string;
+    decision: string;
+    bullets: string[];
+    cautions: string[];
+  } | null>(null);
+  const [usedOpenaiEczema, setUsedOpenaiEczema] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -45,6 +60,8 @@ export function AnalysisScreen({ route, navigation }: Props) {
         imageUri,
         severityScore: analysis.severity_score_0_10,
         severityBucket: analysis.severity_bucket,
+        eczemaBucket: analysis.eczema_bucket,
+        eczemaLikelihood: analysis.eczema_likelihood_0_10,
         regionScores: analysis.region_scores_0_1,
         heatmapUri,
       };
@@ -54,22 +71,35 @@ export function AnalysisScreen({ route, navigation }: Props) {
       const worseningStreakDays = computeWorseningStreakDays(nextList);
       const noImprovementDays = computeNoImprovementDays(nextList);
 
-      const recommendation = await getRecommendation({
-        apiBaseUrl,
-        severityBucket: newEntry.severityBucket,
-        worseningStreakDays,
-        noImprovementDays,
-        cysticSuspected: false,
-      });
+      const [recommendation, eczemaRecommendation] = await Promise.all([
+        getRecommendation({
+          apiBaseUrl,
+          severityBucket: newEntry.severityBucket,
+          worseningStreakDays,
+          noImprovementDays,
+          cysticSuspected: false,
+        }),
+        getEczemaRecommendation({
+          apiBaseUrl,
+          eczemaBucket: analysis.eczema_bucket,
+        }),
+      ]);
 
       await insertEntry(newEntry);
 
       setEntry(newEntry);
+      setUsedOpenaiEczema(analysis.components.used_openai_eczema === 1);
       setRec({
         title: recommendation.title,
         decision: recommendation.decision,
         bullets: recommendation.bullets,
         cautions: recommendation.cautions ?? [],
+      });
+      setEczemaRec({
+        title: eczemaRecommendation.title,
+        decision: eczemaRecommendation.decision,
+        bullets: eczemaRecommendation.bullets,
+        cautions: eczemaRecommendation.cautions ?? [],
       });
     } catch (e: any) {
       Alert.alert('Analysis failed', e?.message ?? 'Unknown error');
@@ -94,6 +124,7 @@ export function AnalysisScreen({ route, navigation }: Props) {
         </Pressable>
       ) : (
         <View style={styles.results}>
+          <Text style={styles.sectionLabel}>Acne (inflammation / lesions)</Text>
           <View style={styles.scoreRow}>
             <View style={styles.scoreBox}>
               <Text style={styles.scoreLabel}>Severity</Text>
@@ -110,7 +141,7 @@ export function AnalysisScreen({ route, navigation }: Props) {
           {rec ? (
             <View style={styles.card}>
               <Text style={styles.cardTitle}>
-                {rec.decision === 'derm' ? 'Dermatology' : 'OTC'}: {rec.title}
+                Acne · {rec.decision === 'derm' ? 'Dermatology' : 'OTC'}: {rec.title}
               </Text>
               {rec.bullets.map((b) => (
                 <Text key={b} style={styles.cardBullet}>
@@ -119,6 +150,41 @@ export function AnalysisScreen({ route, navigation }: Props) {
               ))}
               {rec.cautions.length ? <View style={{ height: 8 }} /> : null}
               {rec.cautions.map((c) => (
+                <Text key={c} style={styles.cardCaution}>
+                  {c}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
+          <Text style={[styles.sectionLabel, { marginTop: 18 }]}>Eczema-type pattern</Text>
+          <View style={styles.scoreRow}>
+            <View style={styles.scoreBox}>
+              <Text style={styles.scoreLabel}>Assessment</Text>
+              <Text style={styles.scoreValueSmall}>{eczemaBucketLabel(entry.eczemaBucket)}</Text>
+              <Text style={styles.scoreHint}>likelihood {entry.eczemaLikelihood.toFixed(1)} / 10</Text>
+            </View>
+            <View style={styles.scoreBox}>
+              <Text style={styles.scoreLabel}>Source</Text>
+              <Text style={styles.scoreValueSmall}>{usedOpenaiEczema ? 'Vision model' : 'Unavailable'}</Text>
+              <Text style={styles.scoreHint}>
+                {usedOpenaiEczema ? 'OpenAI' : 'Set API key for full eczema pass'}
+              </Text>
+            </View>
+          </View>
+
+          {eczemaRec ? (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>
+                Eczema care · {eczemaRec.decision === 'derm' ? 'Dermatology' : 'OTC'}: {eczemaRec.title}
+              </Text>
+              {eczemaRec.bullets.map((b) => (
+                <Text key={b} style={styles.cardBullet}>
+                  • {b}
+                </Text>
+              ))}
+              {eczemaRec.cautions.length ? <View style={{ height: 8 }} /> : null}
+              {eczemaRec.cautions.map((c) => (
                 <Text key={c} style={styles.cardCaution}>
                   {c}
                 </Text>
@@ -140,6 +206,14 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 28 },
   h1: { color: 'white', fontSize: 26, fontWeight: '900' },
   sub: { color: 'rgba(255,255,255,0.78)', marginTop: 6, marginBottom: 14, fontSize: 13 },
+  sectionLabel: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
   previewCard: {
     borderRadius: 18,
     overflow: 'hidden',
