@@ -296,10 +296,11 @@ def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> d
 
     # ── OpenAI Vision override ──────────────────────────────────────────────
     used_openai = False
+    oai_result = None
     try:
-        oai = classify_severity(image_bytes)
-        severity_0_10 = oai.severity_score_0_10
-        bucket = oai.severity_bucket
+        oai_result = classify_severity(image_bytes)
+        severity_0_10 = oai_result.severity_score_0_10
+        bucket = oai_result.severity_bucket
         used_openai = True
     except OpenAIClassifierUnavailable:
         pass  # keep local scores as-is
@@ -335,6 +336,15 @@ def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> d
             "severity_probs_severe": float(severity_probs["severe"]) if severity_probs else float("nan"),
             "filename_level_0_3": float(filename_level),
             "severity_head_pred_0_2": float(severity_head_pred_0_2),
+            # 1.0 when heatmap/region scores and severity score share the same local pipeline;
+            # 0.0 when severity came from OpenAI but heatmap is still segmentation-based.
+            "severity_heatmap_same_source_as_score": float(0.0 if used_openai else 1.0),
+            # 1.0 if the model's severity_bucket matched the score band; NaN if OpenAI was not used.
+            "openai_model_bucket_matched_score": (
+                float(1.0 if oai_result.model_bucket_matched_score else 0.0)
+                if oai_result is not None
+                else float("nan")
+            ),
         },
         "region_scores_0_1": region_scores.as_dict(),
         "heatmap_png_base64": heat_png_b64,

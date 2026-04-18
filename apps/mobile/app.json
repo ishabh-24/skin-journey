@@ -15,10 +15,14 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Skin Journey AI uses the camera to capture daily face photos for tracking acne and inflammation over time."
+        "NSCameraUsageDescription": "Skin Journey AI uses the camera to capture daily face photos for tracking acne and inflammation over time.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

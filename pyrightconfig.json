@@ -1,0 +1,6 @@
+{
+  "venvPath": "services/api",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "reportPrivateImportUsage": false
+}
