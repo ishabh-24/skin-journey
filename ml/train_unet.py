@@ -44,6 +44,7 @@ def train(
     seed: int,
     val_frac: float,
     num_workers: int,
+    bce_pos_weight: float,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -59,7 +60,11 @@ def train(
 
     model = UNet(in_ch=3, out_ch=1, base=32).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    bce = nn.BCEWithLogitsLoss()
+    if bce_pos_weight > 0:
+        pw = torch.tensor([bce_pos_weight], device=device, dtype=torch.float32)
+        bce = nn.BCEWithLogitsLoss(pos_weight=pw)
+    else:
+        bce = nn.BCEWithLogitsLoss()
 
     best = -math.inf
     history = []
@@ -81,6 +86,8 @@ def train(
         model.eval()
         val_loss = 0.0
         dices = []
+        dices_soft = []
+        dices_t035 = []
         ious = []
         with torch.no_grad():
             for x, y in tqdm(val_loader, desc=f"val {epoch}/{epochs}", leave=False):
@@ -92,13 +99,26 @@ def train(
                 probs = torch.sigmoid(logits)
                 pred = (probs > 0.5).float()
                 dices.append(dice_coeff(pred, y).mean().item())
+                dices_soft.append(dice_coeff(probs, y).mean().item())
+                dices_t035.append(dice_coeff((probs > 0.35).float(), y).mean().item())
                 ious.append(iou(pred, y).mean().item())
         val_loss /= max(1, len(val_loader))
         dice_m = float(sum(dices) / max(1, len(dices)))
+        dice_soft_m = float(sum(dices_soft) / max(1, len(dices_soft)))
+        dice_t035_m = float(sum(dices_t035) / max(1, len(dices_t035)))
         iou_m = float(sum(ious) / max(1, len(ious)))
 
-        score = dice_m  # optimize dice
-        row = {"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss, "dice": dice_m, "iou": iou_m}
+        # Hard @0.5 is harsh when logits stay <0.5 early; soft / 0.35 track real progress.
+        score = max(dice_m, dice_soft_m, dice_t035_m)
+        row = {
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "dice": dice_m,
+            "dice_soft": dice_soft_m,
+            "dice_t0.35": dice_t035_m,
+            "iou": iou_m,
+        }
         history.append(row)
 
         print(json.dumps(row))
@@ -107,7 +127,16 @@ def train(
             best = score
             ckpt = {
                 "model": model.state_dict(),
-                "meta": {"epoch": epoch, "dice": dice_m, "iou": iou_m, "images_dir": str(images_dir), "masks_dir": str(masks_dir)},
+                "meta": {
+                    "epoch": epoch,
+                    "dice": dice_m,
+                    "dice_soft": dice_soft_m,
+                    "dice_t0.35": dice_t035_m,
+                    "iou": iou_m,
+                    "images_dir": str(images_dir),
+                    "masks_dir": str(masks_dir),
+                    "bce_pos_weight": bce_pos_weight,
+                },
             }
             torch.save(ckpt, out_dir / "best.pt")
 
@@ -125,6 +154,12 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--val-frac", type=float, default=0.1)
     ap.add_argument("--num-workers", type=int, default=2)
+    ap.add_argument(
+        "--bce-pos-weight",
+        type=float,
+        default=80.0,
+        help="BCE positive class weight (~#bg/#fg). Use 0 to disable. Helps sparse lesion masks.",
+    )
     args = ap.parse_args()
 
     train(
@@ -137,6 +172,7 @@ def main() -> None:
         seed=args.seed,
         val_frac=args.val_frac,
         num_workers=args.num_workers,
+        bce_pos_weight=float(args.bce_pos_weight),
     )
 
 

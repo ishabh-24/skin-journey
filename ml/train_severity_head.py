@@ -159,11 +159,98 @@ def _index_masks(mask_dir: Path) -> Dict[str, Path]:
     return masks
 
 
+def featurize_from_pil_and_infl(img: Image.Image, infl01: np.ndarray) -> np.ndarray:
+    """12-dim vector aligned with API / training (U-Net or GT mask as infl01)."""
+    base8 = _features_from_image_and_inflammation(img, infl01)
+
+    rgb01 = _to_rgb01(img, max_side=512)
+    face_rgb = _simple_face_crop(rgb01)
+    mh, mw = face_rgb.shape[:2]
+    infl_img = Image.fromarray((np.clip(infl01, 0.0, 1.0) * 255).astype(np.uint8), mode="L").resize(
+        (mw, mh), resample=Image.BILINEAR
+    )
+    infl_face = np.asarray(infl_img).astype(np.float32) / 255.0
+
+    intensity = float(np.mean(infl_face))
+    lesion_bin = (infl_face > 0.5).astype(np.uint8)
+    lesion_area = float(np.mean(lesion_bin))
+    small = Image.fromarray((lesion_bin * 255).astype(np.uint8), mode="L").resize((160, 160), resample=Image.NEAREST)
+    lesion_count = float(_count_components((np.asarray(small) > 0).astype(np.uint8)))
+
+    face_img = Image.fromarray((face_rgb * 255).astype(np.uint8), mode="RGB")
+    tex = _normalize01(_texture_map(face_img))
+    p = infl_face.reshape(-1)
+    k = max(1, int(0.02 * p.size))
+    tex_p = tex.reshape(-1)
+    tex_top = float(np.mean(np.partition(tex_p, -k)[-k:]))
+    tex_mean = float(np.mean(tex))
+
+    red_top_times_topk = float(base8[5] * base8[1])
+
+    return np.asarray(
+        [
+            float(base8[0]),
+            float(base8[1]),
+            float(base8[2]),
+            float(base8[3]),
+            float(base8[4]),
+            float(base8[5]),
+            lesion_area,
+            lesion_count,
+            intensity,
+            tex_mean,
+            tex_top,
+            red_top_times_topk,
+        ],
+        dtype=np.float32,
+    )
+
+
+_FEAT_UNET_CACHE: Tuple[object, object] | None = None
+
+
+def _get_unet_for_featurize():
+    global _FEAT_UNET_CACHE
+    if _FEAT_UNET_CACHE is None:
+        import torch
+
+        try:
+            from unet import UNet  # type: ignore
+        except Exception:  # noqa: BLE001
+            from ml.unet import UNet  # type: ignore
+
+        ckpt_path = _find_unet_ckpt()
+        ckpt = torch.load(str(ckpt_path), map_location="cpu")
+        model = UNet(in_ch=3, out_ch=1, base=32)
+        model.load_state_dict(ckpt["model"], strict=True)
+        model.eval()
+        _FEAT_UNET_CACHE = (model, torch)
+    return _FEAT_UNET_CACHE
+
+
+def featurize_image_path_use_unet(image_path: Path, *, size: int = 256) -> np.ndarray:
+    """Run U-Net on bytes then build 12-dim features (same as training --use-unet)."""
+    model, torch_mod = _get_unet_for_featurize()
+    with image_path.open("rb") as f:
+        b = f.read()
+    img = Image.open(io.BytesIO(b))
+    im_small = img.convert("RGB").resize((size, size))
+    x = np.asarray(im_small).astype(np.float32) / 255.0
+    x_t = torch_mod.from_numpy(x).permute(2, 0, 1).unsqueeze(0)
+    with torch_mod.no_grad():
+        logits = model(x_t)
+        infl01 = torch_mod.sigmoid(logits)[0, 0].detach().cpu().numpy().astype(np.float32)
+    return featurize_from_pil_and_infl(img, infl01)
+
+
 def _build_examples(images_dir: Path, masks_dir: Path | None) -> List[Tuple[Path, Path | None, int]]:
     masks = _index_masks(masks_dir) if masks_dir is not None else {}
     ex: List[Tuple[Path, Path | None, int]] = []
+    _img_exts = {".jpg", ".jpeg", ".png", ".webp"}
 
-    for img_path in sorted(images_dir.rglob("*.jpg")):
+    for img_path in sorted(images_dir.rglob("*")):
+        if not img_path.is_file() or img_path.suffix.lower() not in _img_exts:
+            continue
         stem = img_path.stem
         mask_path = masks.get(stem) if masks_dir is not None else None
         if masks_dir is not None and mask_path is None:
@@ -195,9 +282,33 @@ class EpochLog:
     class_counts: List[float]
 
 
+def _find_unet_ckpt() -> Path:
+    """Resolve U-Net weights whether you run from repo root or ml/."""
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates = [
+        repo_root / "services" / "api" / "models" / "unet_acne.pt",
+        Path("services/api/models/unet_acne.pt"),
+        Path("../services/api/models/unet_acne.pt"),
+    ]
+    for p in candidates:
+        if p.exists():
+            return p.resolve()
+    raise RuntimeError(f"missing U-Net weights; tried: {[str(c) for c in candidates]}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--images", required=True, help="Images directory (expects .jpg). Can include train/valid subfolders.")
+    ap.add_argument(
+        "--images",
+        default="",
+        help="Images directory (expects .jpg). Can include train/valid subfolders.",
+    )
+    ap.add_argument(
+        "--data-dir",
+        default="",
+        help="Acne04-style layout: use <data-dir>/images (and optional <data-dir>/masks if --masks omitted). "
+        "Alternative to --images.",
+    )
     ap.add_argument("--masks", default="", help="Optional GT masks directory. If provided, can be used as fallback.")
     ap.add_argument("--out", required=True, help="Output path for checkpoint (.pt).")
     ap.add_argument("--epochs", type=int, default=20)
@@ -207,10 +318,28 @@ def main() -> None:
     ap.add_argument("--num-workers", type=int, default=0)  # kept for compatibility; forced to 0
     ap.add_argument("--use-unet", action="store_true", help="Featurize using U-Net probability masks (matches API).")
     ap.add_argument("--num-classes", type=int, default=3, choices=[3, 4], help="Train 3 or 4 severity classes.")
+    ap.add_argument(
+        "--balanced-batches",
+        action="store_true",
+        help="Draw each training minibatch with replacement, probability ∝ 1/class_count. "
+        "Stops the MLP from seeing almost-only mild examples. Uses plain CE (no loss class-weights) "
+        "so you do not double-upweight rare classes.",
+    )
     args = ap.parse_args()
 
-    images_dir = Path(args.images)
-    masks_dir = Path(args.masks) if str(args.masks).strip() else None
+    if bool(args.images) == bool(args.data_dir):
+        ap.error("Provide exactly one of: --images DIR  or  --data-dir DIR (e.g. data/acne04v2)")
+
+    if args.data_dir:
+        images_dir = Path(args.data_dir) / "images"
+        masks_dir = Path(args.masks) if str(args.masks).strip() else None
+        if masks_dir is None and not args.use_unet:
+            md = Path(args.data_dir) / "masks"
+            if md.exists():
+                masks_dir = md
+    else:
+        images_dir = Path(args.images)
+        masks_dir = Path(args.masks) if str(args.masks).strip() else None
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -229,97 +358,20 @@ def main() -> None:
         examples.append((ip, mp, yy))
     train_ex, val_ex = _split(examples, seed=args.seed)
 
-    _unet_cached = None
-
     # Precompute features (fast enough for this dataset; keeps training simple)
     def compute(ex_list):
         X = np.zeros((len(ex_list), 12), dtype=np.float32)
         y = np.zeros((len(ex_list),), dtype=np.int64)
-        if args.use_unet:
-            import torch
-
-            try:
-                # When running as `python ml/train_severity_head.py`, `ml` may not be importable.
-                from unet import UNet  # type: ignore
-            except Exception:  # noqa: BLE001
-                from ml.unet import UNet  # type: ignore
-
-            def predict_prob_mask_bytes(image_bytes: bytes, *, size: int = 256) -> np.ndarray:
-                nonlocal _unet_cached
-                if _unet_cached is None:
-                    ckpt_path = Path("services/api/models/unet_acne.pt")
-                    if not ckpt_path.exists():
-                        raise RuntimeError(f"missing U-Net weights at {ckpt_path}")
-                    ckpt = torch.load(str(ckpt_path), map_location="cpu")
-                    model = UNet(in_ch=3, out_ch=1, base=32)
-                    model.load_state_dict(ckpt["model"], strict=True)
-                    model.eval()
-                    _unet_cached = (model, torch)
-
-                model, torch_mod = _unet_cached
-                img = Image.open(io.BytesIO(image_bytes)).convert("RGB").resize((size, size))
-                x = np.asarray(img).astype(np.float32) / 255.0
-                x_t = torch_mod.from_numpy(x).permute(2, 0, 1).unsqueeze(0)  # 1,3,H,W
-                with torch_mod.no_grad():
-                    logits = model(x_t)
-                    prob = torch_mod.sigmoid(logits)[0, 0].detach().cpu().numpy().astype(np.float32)
-                return prob
-
         for i, (ip, mp, yy) in enumerate(ex_list):
             img = Image.open(ip)
             if args.use_unet:
-                with ip.open("rb") as f:
-                    b = f.read()
-                infl01 = predict_prob_mask_bytes(b, size=256)
+                X[i] = featurize_image_path_use_unet(ip, size=256)
             else:
                 if mp is None:
                     raise RuntimeError("masks are required when --use-unet is not set")
                 mask = Image.open(mp)
                 infl01 = (np.asarray(mask.convert("L")).astype(np.float32) / 255.0)
-
-            base8 = _features_from_image_and_inflammation(img, infl01)
-
-            rgb01 = _to_rgb01(img, max_side=512)
-            face_rgb = _simple_face_crop(rgb01)
-            mh, mw = face_rgb.shape[:2]
-            infl_img = Image.fromarray((np.clip(infl01, 0.0, 1.0) * 255).astype(np.uint8), mode="L").resize(
-                (mw, mh), resample=Image.BILINEAR
-            )
-            infl_face = np.asarray(infl_img).astype(np.float32) / 255.0
-
-            intensity = float(np.mean(infl_face))
-            lesion_bin = (infl_face > 0.5).astype(np.uint8)
-            lesion_area = float(np.mean(lesion_bin))
-            small = Image.fromarray((lesion_bin * 255).astype(np.uint8), mode="L").resize((160, 160), resample=Image.NEAREST)
-            lesion_count = float(_count_components((np.asarray(small) > 0).astype(np.uint8)))
-
-            face_img = Image.fromarray((face_rgb * 255).astype(np.uint8), mode="RGB")
-            tex = _normalize01(_texture_map(face_img))
-            p = infl_face.reshape(-1)
-            k = max(1, int(0.02 * p.size))
-            tex_p = tex.reshape(-1)
-            tex_top = float(np.mean(np.partition(tex_p, -k)[-k:]))
-            tex_mean = float(np.mean(tex))
-
-            red_top_times_topk = float(base8[5] * base8[1])
-
-            X[i] = np.asarray(
-                [
-                    float(base8[0]),
-                    float(base8[1]),
-                    float(base8[2]),
-                    float(base8[3]),
-                    float(base8[4]),
-                    float(base8[5]),
-                    lesion_area,
-                    lesion_count,
-                    intensity,
-                    tex_mean,
-                    tex_top,
-                    red_top_times_topk,
-                ],
-                dtype=np.float32,
-            )
+                X[i] = featurize_from_pil_and_infl(img, infl01)
             y[i] = yy
             if (i + 1) % 200 == 0 or (i + 1) == len(ex_list):
                 print(f"featurized {i+1}/{len(ex_list)}", flush=True)
@@ -328,8 +380,8 @@ def main() -> None:
     Xtr, ytr = compute(train_ex)
     Xva, yva = compute(val_ex)
 
-    class_counts = np.bincount(ytr, minlength=int(args.num_classes)).astype(np.float32)
-    # inverse frequency weights, normalized
+    class_counts = np.bincount(ytr, minlength=int(args.num_classes)).astype(np.float64)
+    # inverse frequency weights for loss (only when not using balanced batching)
     w = (class_counts.sum() / np.clip(class_counts, 1.0, None))
     w = w / w.mean()
 
@@ -352,13 +404,26 @@ def main() -> None:
     device = torch.device("cpu")
     model = MLP().to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=1e-4)
-    loss_fn = nn.CrossEntropyLoss(weight=torch.as_tensor(w, dtype=torch.float32))
+    if args.balanced_batches:
+        loss_fn = nn.CrossEntropyLoss()
+    else:
+        loss_fn = nn.CrossEntropyLoss(weight=torch.as_tensor(w, dtype=torch.float32))
 
-    def batches(X, y, bs):
+    def batches_shuffle(X: np.ndarray, y: np.ndarray, bs: int, rng: np.random.Generator):
         idx = np.arange(len(X))
-        np.random.shuffle(idx)
+        rng.shuffle(idx)
         for s in range(0, len(X), bs):
             j = idx[s : s + bs]
+            yield X[j], y[j]
+
+    def batches_balanced(X: np.ndarray, y: np.ndarray, bs: int, rng: np.random.Generator):
+        n = len(X)
+        cc = np.bincount(y, minlength=int(args.num_classes)).astype(np.float64)
+        inv = 1.0 / np.clip(cc[y], 1.0, None)
+        p = inv / inv.sum()
+        steps = int(np.ceil(n / bs))
+        for _ in range(steps):
+            j = rng.choice(n, size=bs, replace=True, p=p)
             yield X[j], y[j]
 
     best_acc = -1.0
@@ -367,7 +432,9 @@ def main() -> None:
     for epoch in range(1, int(args.epochs) + 1):
         model.train()
         train_losses: List[float] = []
-        for xb, yb in batches(Xtr, ytr, int(args.batch_size)):
+        rng = np.random.default_rng(int(args.seed) + epoch)
+        batch_fn = batches_balanced if args.balanced_batches else batches_shuffle
+        for xb, yb in batch_fn(Xtr, ytr, int(args.batch_size), rng):
             x = torch.as_tensor(xb, dtype=torch.float32, device=device)
             yt = torch.as_tensor(yb, dtype=torch.long, device=device)
             opt.zero_grad(set_to_none=True)
@@ -423,6 +490,7 @@ def main() -> None:
                     ],
                     "label_mapping": label_mapping,
                     "num_classes": int(args.num_classes),
+                    "balanced_batches": bool(args.balanced_batches),
                     "source": {"images": str(images_dir), "masks": str(masks_dir)},
                 },
             }

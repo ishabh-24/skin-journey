@@ -146,8 +146,12 @@ def _load_sam_predictor(variant: str, ckpt_path: Path, device: torch.device):
         try:
             from mobile_sam import SamPredictor, sam_model_registry  # type: ignore
         except ImportError as e:
+            extra = ""
+            if "timm" in str(e).lower():
+                extra = "Missing dependency for MobileSAM. Run:\n  pip install timm\nThen "
             raise RuntimeError(
-                "mobile_sam not installed. Run:\n"
+                f"{extra}"
+                "install MobileSAM:\n"
                 "  pip install git+https://github.com/ChaoningZhang/MobileSAM.git"
             ) from e
         sam = sam_model_registry["vit_t"](checkpoint=str(ckpt_path))

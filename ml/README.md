@@ -43,7 +43,7 @@ Anything (point + tight box), so the output masks hug the actual lesion pixels
 instead of being filled disks. U-Net trained on these is noticeably more
 sensitive.
 
-1. Install MobileSAM (small + fast) **or** segment-anything (ViT-B/L/H):
+1. Install MobileSAM (small + fast) **or** segment-anything (ViT-B/L/H). MobileSAM needs **`timm`** (included in `pip install -r requirements.txt`); if you still see `No module named 'timm'`, run `pip install timm`.
    ```bash
    pip install git+https://github.com/ChaoningZhang/MobileSAM.git
    # or
@@ -91,8 +91,11 @@ features come from U-Net predictions:
 ```bash
 python train_severity_head.py --use-unet \
     --data-dir data/acne04v2 \
+    --balanced-batches \
     --out ../services/api/models/severity_head.pt
 ```
+
+(`--data-dir` uses `data/acne04v2/images`. You can pass `--images data/acne04v2/images` instead. Copy `outputs/.../best.pt` to `services/api/models/unet_acne.pt` before running. **`--balanced-batches`** oversamples rare severity classes each minibatch so the head does not collapse to “always mild.”)
 
 ## Notes
 - ACNE04/Acne04-v2 may be restricted to **academic use**. Verify licensing before broader use.
