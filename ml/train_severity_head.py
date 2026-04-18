@@ -383,6 +383,8 @@ def main() -> None:
     class_counts = np.bincount(ytr, minlength=int(args.num_classes)).astype(np.float64)
     # inverse frequency weights for loss (only when not using balanced batching)
     w = (class_counts.sum() / np.clip(class_counts, 1.0, None))
+    # Option 1: Heavily penalize minority class errors with squared inverse frequency
+    w = w ** 2
     w = w / w.mean()
 
     import torch

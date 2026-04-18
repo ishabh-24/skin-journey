@@ -1,0 +1,44 @@
+severity_ckpt=/Users/ishabhatia/Desktop/skin-journey/services/api/models/severity_head.pt  unet=/Users/ishabhatia/Desktop/skin-journey/services/api/models/unet_acne.pt
+file                                       levle  true_3cls       pred  p_    mild p_moderate p_  severe
+levle0_0_jpg.rf.S4IyBlrHgJWLVYIv1dIj.jpg       0       mild       mild     0.341    0.328    0.331
+levle0_100_jpg.rf.tX4MsK7Yueyw2U7doza7.jpg     0       mild       mild     0.349    0.322    0.329
+levle0_101_jpg.rf.OYKbkYm82ZNsAYdHX1If.jpg     0       mild       mild     0.346    0.324    0.330
+levle0_102_jpg.rf.gXsZtsXmiVRpK0vdKT0S.jpg     0       mild       mild     0.352    0.319    0.330
+levle0_103_jpg.rf.7w2OM1kmm1KZRUVGNrcb.jpg     0       mild       mild     0.347    0.323    0.330
+levle0_104_jpg.rf.twNBi3Y3ptIFV1J7MYFQ.jpg     0       mild       mild     0.353    0.319    0.328
+levle0_105_jpg.rf.RNORo4OhqT6k1F8iTU8p.jpg     0       mild       mild     0.349    0.322    0.329
+levle0_106_jpg.rf.DptEd5LfXhKBcogUYv4L.jpg     0       mild       mild     0.346    0.324    0.330
+levle0_107_jpg.rf.ixyARwffuNB5Q9sITX5a.jpg     0       mild       mild     0.348    0.323    0.329
+levle0_108_jpg.rf.h9I2zNuAf9aPiL6T3kiP.jpg     0       mild       mild     0.348    0.323    0.329
+levle1_0_jpg.rf.REBxYD5PBLopTCdg46kd.jpg       1       mild       mild     0.338    0.330    0.332
+levle1_100_jpg.rf.sygj7nZsQBfkcOC4d2RL.jpg     1       mild       mild     0.338    0.330    0.332
+levle1_101_jpg.rf.tLEy4EUHLIKkj2yZR2Yi.jpg     1       mild       mild     0.339    0.330    0.332
+levle1_102_jpg.rf.SG124OwpqiuY0o3fSTap.jpg     1       mild       mild     0.338    0.330    0.332
+levle1_103_jpg.rf.uyZjydHUEfSJN46oECY0.jpg     1       mild       mild     0.338    0.330    0.332
+levle1_104_jpg.rf.KsKYYMkXG0VuDi48d1qr.jpg     1       mild       mild     0.341    0.328    0.331
+levle1_105_jpg.rf.Yb3JxEZBInJy7Ggfz1Wk.jpg     1       mild       mild     0.334    0.333    0.333
+levle1_106_jpg.rf.BjybAMqHlpMCKFp0QGyW.jpg     1       mild       mild     0.341    0.328    0.331
+levle1_107_jpg.rf.dpTH0BskdkilYq5XuOKL.jpg     1       mild       mild     0.345    0.325    0.330
+levle1_108_jpg.rf.CiwLI3hsSWaqr5di2VJA.jpg     1       mild     severe     0.278    0.359    0.363
+levle2_0_jpg.rf.a6pgbeVnxReRhVprmpRG.jpg       2   moderate       mild     0.352    0.319    0.329
+levle2_100_jpg.rf.RUBdQ55oBn0E4sp4GlyE.jpg     2   moderate       mild     0.351    0.321    0.328
+levle2_101_jpg.rf.kxjKF232QEccq0OAjdjk.jpg     2   moderate       mild     0.348    0.323    0.329
+levle2_102_jpg.rf.NtlLjEQaOFgEfIccdqHc.jpg     2   moderate       mild     0.347    0.324    0.330
+levle2_105_jpg.rf.vN8gg9oPMM2JwuX0clhP.jpg     2   moderate       mild     0.347    0.323    0.330
+levle2_106_jpg.rf.xIV9itZRk9sXUVrT6UBr.jpg     2   moderate       mild     0.347    0.323    0.330
+levle2_107_jpg.rf.AtiiqPn54usVBerR1LSs.jpg     2   moderate       mild     0.348    0.322    0.329
+levle2_108_jpg.rf.vF8wNqW6ekzIgcoAgOib.jpg     2   moderate       mild     0.349    0.322    0.329
+levle2_109_jpg.rf.wOlN2SntthN0wiD4WdoM.jpg     2   moderate       mild     0.350    0.322    0.329
+levle2_10_jpg.rf.GjTDNp36xr8NXyOsfuxg.jpg      2   moderate     severe     0.282    0.355    0.363
+levle3_0_jpg.rf.kHw01uvKQ68iBM66Fqke.jpg       3     severe       mild     0.346    0.324    0.330
+levle3_100_jpg.rf.HB4iXT7iWFW7br942XBY.jpg     3     severe       mild     0.352    0.316    0.331
+levle3_101_jpg.rf.mwoDQBO06Ua063fy091h.jpg     3     severe     severe     0.057    0.451    0.492
+levle3_102_jpg.rf.hMftmnhOgfJPnjWoCUzD.jpg     3     severe       mild     0.345    0.325    0.330
+levle3_103_jpg.rf.mHiwPgcsfB18wfIE5Jzr.jpg     3     severe       mild     0.344    0.325    0.331
+levle3_104_jpg.rf.Qa1dcdFSewW7HlVu1664.jpg     3     severe       mild     0.335    0.332    0.333
+levle3_105_jpg.rf.xQxzA8RCZDLxDq1llG2T.jpg     3     severe       mild     0.339    0.329    0.332
+levle3_106_jpg.rf.FsgF0v2ZSEKZAUqd5QeT.jpg     3     severe       mild     0.348    0.323    0.329
+levle3_107_jpg.rf.k4qeESPlyjQ5HmybPc6k.jpg     3     severe       mild     0.350    0.320    0.330
+levle3_108_jpg.rf.DdNLEUYJyZV8NYgZTYtE.jpg     3     severe       mild     0.338    0.331    0.332
+
+acc_on_printed_subset=20/40

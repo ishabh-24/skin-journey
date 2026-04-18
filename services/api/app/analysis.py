@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image, ImageFilter
 
 from .ml_model import ModelUnavailable, predict_prob_mask
+from .openai_classifier import OpenAIClassifierUnavailable, classify_severity
 from .severity_head import SeverityHeadUnavailable, predict_severity
 
 
@@ -293,6 +294,16 @@ def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> d
         elif p_mild >= 0.60:
             bucket = "mild"
 
+    # ── OpenAI Vision override ──────────────────────────────────────────────
+    used_openai = False
+    try:
+        oai = classify_severity(image_bytes)
+        severity_0_10 = oai.severity_score_0_10
+        bucket = oai.severity_bucket
+        used_openai = True
+    except OpenAIClassifierUnavailable:
+        pass  # keep local scores as-is
+
     def region_mean(name: str) -> float:
         ys, xs = regions[name]
         return float(np.mean(inflammation[ys, xs]))
@@ -314,6 +325,7 @@ def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> d
         "severity_bucket": bucket,
         "components": {
             "used_model": float(1.0 if used_model else 0.0),
+            "used_openai": float(1.0 if used_openai else 0.0),
             "lesion_area_pct_0_1": float(lesion_area_pct),
             "lesion_count": float(lesion_count),
             "avg_lesion_prob_0_1": float(avg_lesion_prob),
