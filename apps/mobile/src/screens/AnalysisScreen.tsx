@@ -33,7 +33,6 @@ export function AnalysisScreen({ route, navigation }: Props) {
     bullets: string[];
     cautions: string[];
   } | null>(null);
-  const [usedOpenaiEczema, setUsedOpenaiEczema] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -88,7 +87,6 @@ export function AnalysisScreen({ route, navigation }: Props) {
       await insertEntry(newEntry);
 
       setEntry(newEntry);
-      setUsedOpenaiEczema(analysis.components.used_openai_eczema === 1);
       setRec({
         title: recommendation.title,
         decision: recommendation.decision,
@@ -158,19 +156,10 @@ export function AnalysisScreen({ route, navigation }: Props) {
           ) : null}
 
           <Text style={[styles.sectionLabel, { marginTop: 18 }]}>Eczema-type pattern</Text>
-          <View style={styles.scoreRow}>
-            <View style={styles.scoreBox}>
-              <Text style={styles.scoreLabel}>Assessment</Text>
-              <Text style={styles.scoreValueSmall}>{eczemaBucketLabel(entry.eczemaBucket)}</Text>
-              <Text style={styles.scoreHint}>likelihood {entry.eczemaLikelihood.toFixed(1)} / 10</Text>
-            </View>
-            <View style={styles.scoreBox}>
-              <Text style={styles.scoreLabel}>Source</Text>
-              <Text style={styles.scoreValueSmall}>{usedOpenaiEczema ? 'Vision model' : 'Unavailable'}</Text>
-              <Text style={styles.scoreHint}>
-                {usedOpenaiEczema ? 'OpenAI' : 'Set API key for full eczema pass'}
-              </Text>
-            </View>
+          <View style={styles.scoreBox}>
+            <Text style={styles.scoreLabel}>Assessment</Text>
+            <Text style={styles.scoreValueSmall}>{eczemaBucketLabel(entry.eczemaBucket)}</Text>
+            <Text style={styles.scoreHint}>likelihood {entry.eczemaLikelihood.toFixed(1)} / 10</Text>
           </View>
 
           {eczemaRec ? (

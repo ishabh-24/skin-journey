@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system/legacy';
 import * as SQLite from 'expo-sqlite';
 
 import type { EczemaBucket, RegionScores, SeverityBucket, TimelineEntry } from '../types/models';
@@ -129,5 +130,22 @@ export async function getLatestEntries(n = 14): Promise<TimelineEntry[]> {
     regionScores: JSON.parse(r.regionScoresJson) as RegionScores,
     heatmapUri: r.heatmapUri,
   }));
+}
+
+/** Removes every timeline row and attempts to delete stored heatmap files for those rows. */
+export async function clearAllTimelineEntries(): Promise<void> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ heatmapUri: string }>(`SELECT heatmapUri FROM entries`);
+  await db.execAsync(`DELETE FROM entries`);
+  for (const row of rows) {
+    try {
+      const info = await FileSystem.getInfoAsync(row.heatmapUri);
+      if (info.exists) {
+        await FileSystem.deleteAsync(row.heatmapUri, { idempotent: true });
+      }
+    } catch {
+      // ignore per-file errors
+    }
+  }
 }
 

@@ -1,8 +1,8 @@
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, Image, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Image, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
-import { listEntries } from '../lib/db';
+import { clearAllTimelineEntries, listEntries } from '../lib/db';
 import { computeTrendLabel, primaryRegion } from '../lib/trends';
 import type { TimelineEntry } from '../types/models';
 
@@ -37,10 +37,42 @@ export function TimelineScreen() {
     }
   }, [load]);
 
+  const onClearHistory = useCallback(() => {
+    Alert.alert(
+      'Clear timeline?',
+      'Removes all saved analysis entries and heatmaps from this device. Your camera roll photos are not deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear all',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              try {
+                await clearAllTimelineEntries();
+                await load();
+              } catch (e: unknown) {
+                const msg = e instanceof Error ? e.message : 'Unknown error';
+                Alert.alert('Could not clear', msg);
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [load]);
+
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <Text style={styles.h1}>Timeline</Text>
+        <View style={styles.headerTop}>
+          <Text style={styles.h1}>Timeline</Text>
+          {entries.length > 0 ? (
+            <Pressable onPress={onClearHistory} style={({ pressed }) => [styles.clearBtn, pressed && styles.clearBtnPressed]}>
+              <Text style={styles.clearBtnText}>Clear history</Text>
+            </Pressable>
+          ) : null}
+        </View>
         <Text style={styles.sub}>
           Trend: <Text style={styles.subStrong}>{trend}</Text>
         </Text>
@@ -100,7 +132,23 @@ function MiniBars({ entries, highlightId }: { entries: TimelineEntry[]; highligh
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0B0B10' },
   header: { padding: 16, paddingBottom: 10 },
-  h1: { color: 'white', fontSize: 26, fontWeight: '900' },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  h1: { color: 'white', fontSize: 26, fontWeight: '900', flexShrink: 1 },
+  clearBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,100,100,0.45)',
+    backgroundColor: 'rgba(255,80,80,0.12)',
+  },
+  clearBtnPressed: { opacity: 0.75 },
+  clearBtnText: { color: '#FF8A8A', fontSize: 13, fontWeight: '800' },
   sub: { color: 'rgba(255,255,255,0.78)', marginTop: 6, fontSize: 13 },
   subStrong: { color: 'white', fontWeight: '900' },
   list: { paddingHorizontal: 16, paddingBottom: 18, gap: 12 },
