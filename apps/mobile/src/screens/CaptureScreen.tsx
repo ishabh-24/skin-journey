@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { FaceGridOverlay } from '../components/FaceGridOverlay';
+import { palette } from '../theme/colors';
 import type { CaptureStackParamList } from '../types/nav';
 
 type Props = NativeStackScreenProps<CaptureStackParamList, 'Capture'>;
@@ -87,13 +88,13 @@ export function CaptureScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0B10' },
+  container: { flex: 1, backgroundColor: palette.bg },
   cameraWrap: { flex: 1, overflow: 'hidden' },
   bottomBar: {
     padding: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: '#0B0B10',
+    borderTopColor: palette.tabBorder,
+    backgroundColor: palette.captureBar,
   },
   tipBox: {
     position: 'absolute',
@@ -102,25 +103,25 @@ const styles = StyleSheet.create({
     bottom: 14,
     padding: 12,
     borderRadius: 14,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: palette.cameraTipBg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: palette.cameraTipBorder,
   },
-  tipTitle: { color: 'white', fontSize: 14, fontWeight: '700', marginBottom: 4 },
-  tipText: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 2 },
+  tipTitle: { color: palette.sageDark, fontSize: 14, fontWeight: '700', marginBottom: 4 },
+  tipText: { color: palette.inkMuted, fontSize: 12, marginTop: 2 },
   shutter: {
     height: 52,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#6C5CE7',
+    backgroundColor: palette.sage,
   },
   shutterDisabled: { opacity: 0.6 },
-  shutterText: { color: 'white', fontSize: 16, fontWeight: '800' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#0B0B10' },
-  title: { color: 'white', fontSize: 22, fontWeight: '800', marginBottom: 8 },
-  body: { color: 'rgba(255,255,255,0.85)', fontSize: 14, textAlign: 'center', marginBottom: 14 },
-  primaryBtn: { backgroundColor: '#6C5CE7', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12 },
-  primaryBtnText: { color: 'white', fontWeight: '800' },
+  shutterText: { color: palette.onPrimary, fontSize: 16, fontWeight: '800' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: palette.bg },
+  title: { color: palette.ink, fontSize: 22, fontWeight: '800', marginBottom: 8 },
+  body: { color: palette.inkMuted, fontSize: 14, textAlign: 'center', marginBottom: 14 },
+  primaryBtn: { backgroundColor: palette.sage, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12 },
+  primaryBtnText: { color: palette.onPrimary, fontWeight: '800' },
 });
 

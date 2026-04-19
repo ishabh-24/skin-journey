@@ -1,6 +1,8 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { palette } from '../theme/colors';
+
 export function FaceGridOverlay() {
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -18,7 +20,7 @@ const styles = StyleSheet.create({
   border: {
     ...StyleSheet.absoluteFillObject,
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.45)',
+    borderColor: 'rgba(220, 235, 222, 0.65)',
     borderRadius: 18,
     margin: 18,
   },
@@ -28,7 +30,7 @@ const styles = StyleSheet.create({
     bottom: 18,
     left: '33%',
     width: 1,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(220, 235, 222, 0.45)',
   },
   v2: {
     position: 'absolute',
@@ -36,7 +38,7 @@ const styles = StyleSheet.create({
     bottom: 18,
     left: '66%',
     width: 1,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(220, 235, 222, 0.45)',
   },
   h1: {
     position: 'absolute',
@@ -44,7 +46,7 @@ const styles = StyleSheet.create({
     right: 18,
     top: '33%',
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(220, 235, 222, 0.45)',
   },
   h2: {
     position: 'absolute',
@@ -52,7 +54,7 @@ const styles = StyleSheet.create({
     right: 18,
     top: '66%',
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(220, 235, 222, 0.45)',
   },
   centerDot: {
     position: 'absolute',
@@ -63,7 +65,7 @@ const styles = StyleSheet.create({
     marginLeft: -3,
     marginTop: -3,
     borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.7)',
+    backgroundColor: palette.surface,
   },
 });
 

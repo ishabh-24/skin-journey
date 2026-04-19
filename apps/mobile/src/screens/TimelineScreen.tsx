@@ -18,6 +18,7 @@ import {
 import { clearAllTimelineEntries, listEntries, updateEntryFields } from '../lib/db';
 import { formatMsToYmd, parseYmdToLocalMs } from '../lib/entryDate';
 import { computeFlareEntryIds, computeTrendLabel, primaryRegion } from '../lib/trends';
+import { palette } from '../theme/colors';
 import type { TimelineEntry } from '../types/models';
 
 function fmtDate(ms: number) {
@@ -131,7 +132,7 @@ export function TimelineScreen() {
       <FlatList
         data={entries}
         keyExtractor={(e) => e.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="white" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={palette.sage} />}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -143,7 +144,7 @@ export function TimelineScreen() {
           <Pressable
             onPress={() => openEdit(item)}
             style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            android_ripple={{ color: 'rgba(255,255,255,0.12)' }}
+            android_ripple={{ color: palette.sageFill18 }}
           >
             <View style={styles.thumbWrap}>
               <Image source={{ uri: item.imageUri }} style={styles.thumb} />
@@ -192,7 +193,7 @@ export function TimelineScreen() {
               value={draftDate}
               onChangeText={setDraftDate}
               placeholder="2026-04-18"
-              placeholderTextColor="rgba(255,255,255,0.35)"
+              placeholderTextColor={palette.inkFaint}
               style={styles.input}
               autoCapitalize="none"
               autoCorrect={false}
@@ -202,7 +203,7 @@ export function TimelineScreen() {
               value={draftNote}
               onChangeText={setDraftNote}
               placeholder="e.g. new cleanser, late night, stress, dairy…"
-              placeholderTextColor="rgba(255,255,255,0.35)"
+              placeholderTextColor={palette.inkFaint}
               style={[styles.input, styles.inputMultiline]}
               multiline
               textAlignVertical="top"
@@ -238,7 +239,7 @@ function MiniBars({ entries, highlightId }: { entries: TimelineEntry[]; highligh
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0B0B10' },
+  root: { flex: 1, backgroundColor: palette.bg },
   header: { padding: 16, paddingBottom: 10 },
   headerTop: {
     flexDirection: 'row',
@@ -246,55 +247,55 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  h1: { color: 'white', fontSize: 26, fontWeight: '900', flexShrink: 1 },
+  h1: { color: palette.ink, fontSize: 26, fontWeight: '900', flexShrink: 1 },
   clearBtn: {
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,100,100,0.45)',
-    backgroundColor: 'rgba(255,80,80,0.12)',
+    borderColor: palette.destructiveBorder,
+    backgroundColor: palette.destructiveBg,
   },
   clearBtnPressed: { opacity: 0.75 },
-  clearBtnText: { color: '#FF8A8A', fontSize: 13, fontWeight: '800' },
-  sub: { color: 'rgba(255,255,255,0.78)', marginTop: 6, fontSize: 13 },
-  subStrong: { color: 'white', fontWeight: '900' },
-  hint: { color: 'rgba(255,255,255,0.55)', marginTop: 8, fontSize: 12, lineHeight: 17 },
+  clearBtnText: { color: palette.destructiveText, fontSize: 13, fontWeight: '800' },
+  sub: { color: palette.inkSubtle, marginTop: 6, fontSize: 13 },
+  subStrong: { color: palette.sageDark, fontWeight: '900' },
+  hint: { color: palette.inkFaint, marginTop: 8, fontSize: 12, lineHeight: 17 },
   list: { paddingHorizontal: 16, paddingBottom: 18, gap: 12 },
   row: {
     flexDirection: 'row',
     gap: 12,
     padding: 12,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: palette.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: palette.border,
   },
-  rowPressed: { backgroundColor: 'rgba(255,255,255,0.09)' },
-  thumbWrap: { width: 72, height: 72, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.08)' },
+  rowPressed: { backgroundColor: palette.sageFill8 },
+  thumbWrap: { width: 72, height: 72, borderRadius: 14, overflow: 'hidden', backgroundColor: palette.surfaceMuted },
   thumb: { width: 72, height: 72 },
   titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
-  rowTitle: { color: 'white', fontSize: 13, fontWeight: '900' },
+  rowTitle: { color: palette.ink, fontSize: 13, fontWeight: '900' },
   flarePill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 120, 80, 0.25)',
+    backgroundColor: palette.flareBg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255, 160, 120, 0.5)',
+    borderColor: palette.flareBorder,
   },
-  flarePillText: { color: '#FFB59A', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
-  rowBody: { color: 'rgba(255,255,255,0.78)', fontSize: 12, marginTop: 4 },
-  notePreview: { color: 'rgba(200,210,255,0.9)', fontSize: 12, marginTop: 6, fontStyle: 'italic' },
+  flarePillText: { color: palette.flareText, fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
+  rowBody: { color: palette.inkMuted, fontSize: 12, marginTop: 4 },
+  notePreview: { color: palette.sageDark, fontSize: 12, marginTop: 6, fontStyle: 'italic' },
   bars: { flexDirection: 'row', gap: 4, marginTop: 8, alignItems: 'flex-end' },
-  bar: { width: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.25)' },
-  barHi: { backgroundColor: '#6C5CE7' },
-  empty: { padding: 24, margin: 16, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.06)' },
-  emptyTitle: { color: 'white', fontSize: 16, fontWeight: '900', marginBottom: 6 },
-  emptyBody: { color: 'rgba(255,255,255,0.78)', fontSize: 13 },
+  bar: { width: 10, borderRadius: 5, backgroundColor: palette.sageFill18 },
+  barHi: { backgroundColor: palette.sage },
+  empty: { padding: 24, margin: 16, borderRadius: 16, backgroundColor: palette.surface },
+  emptyTitle: { color: palette.ink, fontSize: 16, fontWeight: '900', marginBottom: 6 },
+  emptyBody: { color: palette.inkMuted, fontSize: 13 },
   modalRoot: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: palette.scrim,
   },
   modalKav: {
     ...StyleSheet.absoluteFillObject,
@@ -304,21 +305,21 @@ const styles = StyleSheet.create({
   modalCard: {
     borderRadius: 18,
     padding: 18,
-    backgroundColor: '#151520',
+    backgroundColor: palette.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
+    borderColor: palette.border,
   },
-  modalTitle: { color: 'white', fontSize: 18, fontWeight: '900', marginBottom: 14 },
-  modalLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  modalTitle: { color: palette.ink, fontSize: 18, fontWeight: '900', marginBottom: 14 },
+  modalLabel: { color: palette.inkSubtle, fontSize: 12, fontWeight: '700', marginBottom: 6 },
   input: {
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: palette.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: 'white',
+    color: palette.ink,
     fontSize: 15,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: palette.surfaceMuted,
   },
   inputMultiline: { minHeight: 100, paddingTop: 10 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 18 },
@@ -327,14 +328,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
   },
-  modalBtnGhostText: { color: 'white', fontSize: 14, fontWeight: '800' },
+  modalBtnGhostText: { color: palette.sageDark, fontSize: 14, fontWeight: '800' },
   modalBtnPrimary: {
     paddingVertical: 10,
     paddingHorizontal: 18,
     borderRadius: 12,
-    backgroundColor: '#6C5CE7',
+    backgroundColor: palette.sage,
   },
-  modalBtnPrimaryText: { color: 'white', fontSize: 14, fontWeight: '900' },
+  modalBtnPrimaryText: { color: palette.onPrimary, fontSize: 14, fontWeight: '900' },
 });

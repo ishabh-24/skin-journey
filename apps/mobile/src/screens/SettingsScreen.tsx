@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { getSetting, setSetting } from '../lib/db';
+import { palette } from '../theme/colors';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 
@@ -83,7 +84,7 @@ export function SettingsScreen() {
           autoCorrect={false}
           keyboardType="url"
           placeholder="http://localhost:8000"
-          placeholderTextColor="rgba(255,255,255,0.35)"
+          placeholderTextColor={palette.inkFaint}
           style={styles.input}
         />
         <Pressable style={styles.primaryBtn} onPress={onSave}>
@@ -94,7 +95,7 @@ export function SettingsScreen() {
           onPress={onTestConnection}
           disabled={testing}
         >
-          {testing ? <ActivityIndicator color="white" /> : <Text style={styles.secondaryBtnText}>Test connection</Text>}
+          {testing ? <ActivityIndicator color={palette.sage} /> : <Text style={styles.secondaryBtnText}>Test connection</Text>}
         </Pressable>
         {saved ? <Text style={styles.saved}>Saved URL: {saved}</Text> : null}
       </View>
@@ -103,49 +104,50 @@ export function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#0B0B10', padding: 16 },
-  h1: { color: 'white', fontSize: 26, fontWeight: '900' },
+  root: { flex: 1, backgroundColor: palette.bg, padding: 16 },
+  h1: { color: palette.ink, fontSize: 26, fontWeight: '900' },
   card: {
     marginTop: 14,
     padding: 14,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: palette.surface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: palette.border,
   },
-  label: { color: 'white', fontSize: 14, fontWeight: '900' },
-  help: { color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 6, lineHeight: 16 },
-  mono: { fontFamily: 'Courier', color: 'white' },
+  label: { color: palette.ink, fontSize: 14, fontWeight: '900' },
+  help: { color: palette.inkMuted, fontSize: 12, marginTop: 6, lineHeight: 16 },
+  mono: { fontFamily: 'Courier', color: palette.sageDark },
   input: {
     marginTop: 10,
     height: 46,
     borderRadius: 12,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    backgroundColor: palette.surfaceMuted,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-    color: 'white',
+    borderColor: palette.border,
+    color: palette.ink,
   },
   primaryBtn: {
     marginTop: 12,
     height: 48,
     borderRadius: 14,
-    backgroundColor: '#6C5CE7',
+    backgroundColor: palette.sage,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primaryBtnText: { color: 'white', fontSize: 14, fontWeight: '900' },
+  primaryBtnText: { color: palette.onPrimary, fontSize: 14, fontWeight: '900' },
   secondaryBtn: {
     marginTop: 10,
     height: 46,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
   secondaryBtnDisabled: { opacity: 0.6 },
-  secondaryBtnText: { color: 'white', fontSize: 14, fontWeight: '800' },
-  saved: { marginTop: 10, color: 'rgba(255,255,255,0.75)', fontSize: 12 },
+  secondaryBtnText: { color: palette.sageDark, fontSize: 14, fontWeight: '800' },
+  saved: { marginTop: 10, color: palette.inkMuted, fontSize: 12 },
 });
 
