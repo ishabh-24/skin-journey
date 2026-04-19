@@ -11,6 +11,8 @@ export type AnalyzeResponse = {
   severity_bucket: SeverityBucket;
   eczema_bucket: EczemaBucket;
   eczema_likelihood_0_10: number;
+  /** Present from API for debugging; not shown in the app UI. */
+  scoring_debug?: string;
   components: Record<string, number>;
   region_scores_0_1: RegionScores;
   heatmap_png_base64: string;
@@ -33,5 +35,7 @@ export type TimelineEntry = {
   eczemaLikelihood: number;
   regionScores: RegionScores;
   heatmapUri: string;
+  /** User-editable: suspected triggers, products, stress, etc. */
+  userNote: string;
 };
 

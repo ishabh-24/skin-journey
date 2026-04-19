@@ -1,4 +1,4 @@
-import type { TimelineEntry } from '../types/models';
+import type { SeverityBucket, TimelineEntry } from '../types/models';
 
 function isCloseInTime(aMs: number, bMs: number) {
   return Math.abs(aMs - bMs) <= 36 * 60 * 60 * 1000;
@@ -53,5 +53,35 @@ export function primaryRegion(regionScores: TimelineEntry['regionScores']): stri
     if (v > best.v) best = { name: k, v };
   }
   return best.name;
+}
+
+function severityBucketRank(b: SeverityBucket): number {
+  if (b === 'mild') return 0;
+  if (b === 'moderate') return 1;
+  return 2;
+}
+
+/** Max time between two consecutive timeline entries (newer vs older) to count a flare step. */
+const FLARE_MAX_GAP_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * ``entriesDesc`` is newest-first (same as DB list). Marks the **newer** photo in a pair when
+ * acne clearly worsened vs the immediately older neighbor in the list.
+ */
+export function computeFlareEntryIds(entriesDesc: TimelineEntry[]): Set<string> {
+  const out = new Set<string>();
+  if (entriesDesc.length < 2) return out;
+  for (let i = 0; i < entriesDesc.length - 1; i++) {
+    const cur = entriesDesc[i];
+    const prev = entriesDesc[i + 1];
+    if (cur.createdAt <= prev.createdAt) continue;
+    if (cur.createdAt - prev.createdAt > FLARE_MAX_GAP_MS) continue;
+    const scoreJump = cur.severityScore - prev.severityScore;
+    const bucketUp = severityBucketRank(cur.severityBucket) > severityBucketRank(prev.severityBucket);
+    if (scoreJump >= 0.35 || bucketUp) {
+      out.add(cur.id);
+    }
+  }
+  return out;
 }
 

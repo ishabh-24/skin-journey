@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 from dataclasses import dataclass
 from typing import Dict, Tuple
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -298,26 +301,33 @@ def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> d
     # ── OpenAI Vision override ──────────────────────────────────────────────
     used_openai = False
     oai_result = None
+    acne_openai_skip_reason: str | None = None
     try:
         oai_result = classify_severity(image_bytes)
         severity_0_10 = oai_result.severity_score_0_10
         bucket = oai_result.severity_bucket
         used_openai = True
-    except OpenAIClassifierUnavailable:
-        pass  # keep local scores as-is
+    except OpenAIClassifierUnavailable as exc:
+        acne_openai_skip_reason = str(exc).replace("\n", " ").strip()[:240] or "OpenAIClassifierUnavailable"
 
     # ── OpenAI eczema / atopic pattern assessment ───────────────────────────
     eczema_bucket = "none"
     eczema_likelihood_0_10 = 0.0
     used_openai_eczema = False
     oai_eczema = None
+    eczema_openai_skip_reason: str | None = None
     try:
         oai_eczema = classify_eczema(image_bytes)
         eczema_bucket = oai_eczema.eczema_bucket
         eczema_likelihood_0_10 = oai_eczema.eczema_likelihood_0_10
         used_openai_eczema = True
-    except OpenAIEczemaClassifierUnavailable:
-        pass
+    except OpenAIEczemaClassifierUnavailable as exc:
+        eczema_openai_skip_reason = str(exc).replace("\n", " ").strip()[:240] or "OpenAIEczemaClassifierUnavailable"
+
+    acne_src = "openai_gpt-4o" if used_openai else f"local_fallback ({acne_openai_skip_reason or 'unknown'})"
+    eczema_src = "openai_gpt-4o" if used_openai_eczema else f"local_fallback ({eczema_openai_skip_reason or 'unknown'})"
+    scoring_debug = f"acne_severity={acne_src} ; eczema={eczema_src}"
+    logger.info("analyze %s", scoring_debug)
 
     def region_mean(name: str) -> float:
         ys, xs = regions[name]
@@ -340,6 +350,7 @@ def analyze_image_bytes(image_bytes: bytes, *, filename: str | None = None) -> d
         "severity_bucket": bucket,
         "eczema_bucket": eczema_bucket,
         "eczema_likelihood_0_10": eczema_likelihood_0_10,
+        "scoring_debug": scoring_debug,
         "components": {
             "used_model": float(1.0 if used_model else 0.0),
             "used_openai": float(1.0 if used_openai else 0.0),

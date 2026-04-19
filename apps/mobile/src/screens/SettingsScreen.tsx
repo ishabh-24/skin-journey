@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { getSetting, setSetting } from '../lib/db';
 
@@ -8,6 +8,7 @@ const DEFAULT_API_BASE_URL = 'http://localhost:8000';
 export function SettingsScreen() {
   const [apiBaseUrl, setApiBaseUrlState] = useState(DEFAULT_API_BASE_URL);
   const [saved, setSaved] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -32,6 +33,38 @@ export function SettingsScreen() {
     Alert.alert('Saved', 'API Base URL updated.');
   }
 
+  async function onTestConnection() {
+    const base = apiBaseUrl.trim().replace(/\/+$/, '');
+    if (!/^https?:\/\//.test(base)) {
+      Alert.alert('Invalid URL', 'Must start with http:// or https://');
+      return;
+    }
+    setTesting(true);
+    const url = `${base}/health`;
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 10000);
+      const res = await fetch(url, { method: 'GET', signal: ac.signal });
+      clearTimeout(timer);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const j = (await res.json().catch(() => null)) as { ok?: boolean } | null;
+      Alert.alert('Connected', j && typeof j === 'object' && 'ok' in j ? 'API health check succeeded.' : `OK (${res.status})`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert(
+        'Connection failed',
+        `${msg}\n\n` +
+          'On a real phone, use http://YOUR_LAPTOP_IP:8000 (not localhost). On Mac, run: ipconfig getifaddr en0\n' +
+          'Start API with: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 from the services/api folder.\n' +
+          'If it still fails: turn off VPN, allow Python in the firewall, and avoid guest Wi‑Fi (AP isolation).',
+      );
+    } finally {
+      setTesting(false);
+    }
+  }
+
   return (
     <View style={styles.root}>
       <Text style={styles.h1}>Settings</Text>
@@ -39,7 +72,9 @@ export function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.label}>API Base URL</Text>
         <Text style={styles.help}>
-          iOS simulator: <Text style={styles.mono}>http://localhost:8000</Text> · Device: use your LAN IP.
+          Simulator: <Text style={styles.mono}>http://localhost:8000</Text>
+          {'\n'}
+          Physical phone: <Text style={styles.mono}>http://192.168.x.x:8000</Text> (your Mac’s Wi‑Fi IP — no trailing slash).
         </Text>
         <TextInput
           value={apiBaseUrl}
@@ -54,7 +89,14 @@ export function SettingsScreen() {
         <Pressable style={styles.primaryBtn} onPress={onSave}>
           <Text style={styles.primaryBtnText}>Save</Text>
         </Pressable>
-        {saved ? <Text style={styles.saved}>Current: {saved}</Text> : null}
+        <Pressable
+          style={[styles.secondaryBtn, testing && styles.secondaryBtnDisabled]}
+          onPress={onTestConnection}
+          disabled={testing}
+        >
+          {testing ? <ActivityIndicator color="white" /> : <Text style={styles.secondaryBtnText}>Test connection</Text>}
+        </Pressable>
+        {saved ? <Text style={styles.saved}>Saved URL: {saved}</Text> : null}
       </View>
     </View>
   );
@@ -93,6 +135,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   primaryBtnText: { color: 'white', fontSize: 14, fontWeight: '900' },
+  secondaryBtn: {
+    marginTop: 10,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryBtnDisabled: { opacity: 0.6 },
+  secondaryBtnText: { color: 'white', fontSize: 14, fontWeight: '800' },
   saved: { marginTop: 10, color: 'rgba(255,255,255,0.75)', fontSize: 12 },
 });
 

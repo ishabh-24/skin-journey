@@ -27,7 +27,8 @@ export async function initDb() {
       regionScoresJson TEXT NOT NULL,
       heatmapUri TEXT NOT NULL,
       eczemaBucket TEXT NOT NULL DEFAULT 'none',
-      eczemaLikelihood REAL NOT NULL DEFAULT 0
+      eczemaLikelihood REAL NOT NULL DEFAULT 0,
+      userNote TEXT NOT NULL DEFAULT ''
     );
   `);
 
@@ -38,6 +39,9 @@ export async function initDb() {
   }
   if (!names.has('eczemaLikelihood')) {
     await db.execAsync(`ALTER TABLE entries ADD COLUMN eczemaLikelihood REAL NOT NULL DEFAULT 0;`);
+  }
+  if (!names.has('userNote')) {
+    await db.execAsync(`ALTER TABLE entries ADD COLUMN userNote TEXT NOT NULL DEFAULT '';`);
   }
 }
 
@@ -62,8 +66,8 @@ export async function setSetting(key: string, value: string): Promise<void> {
 export async function insertEntry(entry: TimelineEntry): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    `INSERT INTO entries (id, createdAt, imageUri, severityScore, severityBucket, regionScoresJson, heatmapUri, eczemaBucket, eczemaLikelihood)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO entries (id, createdAt, imageUri, severityScore, severityBucket, regionScoresJson, heatmapUri, eczemaBucket, eczemaLikelihood, userNote)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       entry.id,
       entry.createdAt,
@@ -74,6 +78,7 @@ export async function insertEntry(entry: TimelineEntry): Promise<void> {
       entry.heatmapUri,
       entry.eczemaBucket,
       entry.eczemaLikelihood,
+      entry.userNote ?? '',
     ],
   );
 }
@@ -90,6 +95,7 @@ export async function listEntries(limit = 60): Promise<TimelineEntry[]> {
     heatmapUri: string;
     eczemaBucket?: EczemaBucket;
     eczemaLikelihood?: number;
+    userNote?: string | null;
   }>(`SELECT * FROM entries ORDER BY createdAt DESC LIMIT ?`, [limit]);
 
   return rows.map((r) => ({
@@ -102,6 +108,7 @@ export async function listEntries(limit = 60): Promise<TimelineEntry[]> {
     eczemaLikelihood: Number(r.eczemaLikelihood ?? 0),
     regionScores: JSON.parse(r.regionScoresJson) as RegionScores,
     heatmapUri: r.heatmapUri,
+    userNote: r.userNote ?? '',
   }));
 }
 
@@ -117,6 +124,7 @@ export async function getLatestEntries(n = 14): Promise<TimelineEntry[]> {
     heatmapUri: string;
     eczemaBucket?: EczemaBucket;
     eczemaLikelihood?: number;
+    userNote?: string | null;
   }>(`SELECT * FROM entries ORDER BY createdAt DESC LIMIT ?`, [n]);
 
   return rows.map((r) => ({
@@ -129,7 +137,28 @@ export async function getLatestEntries(n = 14): Promise<TimelineEntry[]> {
     eczemaLikelihood: Number(r.eczemaLikelihood ?? 0),
     regionScores: JSON.parse(r.regionScoresJson) as RegionScores,
     heatmapUri: r.heatmapUri,
+    userNote: r.userNote ?? '',
   }));
+}
+
+export async function updateEntryFields(
+  id: string,
+  fields: { createdAt?: number; userNote?: string },
+): Promise<void> {
+  const db = await getDb();
+  const parts: string[] = [];
+  const vals: (string | number)[] = [];
+  if (fields.createdAt !== undefined) {
+    parts.push('createdAt = ?');
+    vals.push(fields.createdAt);
+  }
+  if (fields.userNote !== undefined) {
+    parts.push('userNote = ?');
+    vals.push(fields.userNote);
+  }
+  if (!parts.length) return;
+  vals.push(id);
+  await db.runAsync(`UPDATE entries SET ${parts.join(', ')} WHERE id = ?`, vals);
 }
 
 /** Removes every timeline row and attempts to delete stored heatmap files for those rows. */

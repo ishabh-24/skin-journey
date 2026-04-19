@@ -46,7 +46,16 @@ export function AnalysisScreen({ route, navigation }: Props) {
   async function onAnalyze() {
     setLoading(true);
     try {
-      const analysis = await analyzeImage({ apiBaseUrl, imageUri });
+      // Prefer URL from DB so we never analyze with a stale default (e.g. localhost on a
+      // physical phone) before Settings hydration finishes.
+      const saved = (await getSetting('apiBaseUrl'))?.trim() ?? '';
+      const base =
+        saved && /^https?:\/\//.test(saved)
+          ? saved.replace(/\/+$/, '')
+          : apiBaseUrl.trim().replace(/\/+$/, '');
+      if (base !== apiBaseUrl) setApiBaseUrl(base);
+
+      const analysis = await analyzeImage({ apiBaseUrl: base, imageUri });
 
       const heatmapUri = await writeBase64Png({
         base64: analysis.heatmap_png_base64,
@@ -63,6 +72,7 @@ export function AnalysisScreen({ route, navigation }: Props) {
         eczemaLikelihood: analysis.eczema_likelihood_0_10,
         regionScores: analysis.region_scores_0_1,
         heatmapUri,
+        userNote: '',
       };
 
       const prev = await getLatestEntries(14);
@@ -72,14 +82,14 @@ export function AnalysisScreen({ route, navigation }: Props) {
 
       const [recommendation, eczemaRecommendation] = await Promise.all([
         getRecommendation({
-          apiBaseUrl,
+          apiBaseUrl: base,
           severityBucket: newEntry.severityBucket,
           worseningStreakDays,
           noImprovementDays,
           cysticSuspected: false,
         }),
         getEczemaRecommendation({
-          apiBaseUrl,
+          apiBaseUrl: base,
           eczemaBucket: analysis.eczema_bucket,
         }),
       ]);
@@ -109,11 +119,10 @@ export function AnalysisScreen({ route, navigation }: Props) {
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Text style={styles.h1}>Analysis</Text>
-      <Text style={styles.sub}>Photo captured. Run analysis to score severity and generate a heatmap.</Text>
+      <Text style={styles.sub}>Photo captured. Run analysis for severity scores and guidance.</Text>
 
       <View style={styles.previewCard}>
         <Image source={{ uri: imageUri }} style={styles.previewImg} />
-        {entry?.heatmapUri ? <Image source={{ uri: entry.heatmapUri }} style={styles.heatmap} /> : null}
       </View>
 
       {!entry ? (
@@ -211,7 +220,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
   previewImg: { width: '100%', height: 360 },
-  heatmap: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, opacity: 0.65 },
   primaryBtn: {
     marginTop: 14,
     height: 52,
